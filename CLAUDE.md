@@ -4,17 +4,22 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Project
 
-Single-file HTML app (`voice_memo_library.html`) — a voice memo recorder and library that runs entirely in the browser. No build system, no dependencies, no server.
+Browser-based voice memo recorder and library. No build system, no dependencies, no server.
+
+Files:
+- `voice_memo_library.html` — markup only
+- `style.css` — all styles
+- `app.js` — all logic
 
 To open: `open voice_memo_library.html`
 
 ## Architecture
 
-Everything lives in one file with three layers:
+Three files, three layers:
 
-- **CSS** (`:root` variables → layout → components): Dark theme with CSS custom properties. All colors and fonts defined in `:root`.
-- **HTML**: Two-column layout — `<aside class="sidebar">` (filter nav + record button) and `<main>` (entry list + search). A modal overlay handles the active recording UI.
-- **JS** (bottom of file): No framework. State is `memos[]` (persisted to `localStorage` as `voice_memos`) plus a few globals (`currentFilter`, `openId`, `isRecording`, `liveTranscript`).
+- **`style.css`** (`:root` variables → layout → components): Dark theme with CSS custom properties. All colors and fonts defined in `:root`.
+- **`voice_memo_library.html`**: Two-column layout — `<aside class="sidebar">` (filter nav + record button) and `<main>` (entry list + search). A modal overlay handles the active recording UI.
+- **`app.js`**: No framework. State is `memos[]` (persisted to `localStorage` as `voice_memos`) plus a few globals (`currentFilter`, `openId`, `isRecording`, `liveTranscript`).
 
 ### Recording flow
 
