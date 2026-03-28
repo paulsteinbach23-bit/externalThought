@@ -2,7 +2,7 @@
   "name": "MEMO — Voice Library",
   "short_name": "MEMO",
   "description": "Sprachmemo-Recorder und Bibliothek",
-  "start_url": "./voice_memo_library.html",
+  "start_url": "./index.html",
   "scope": "./",
   "display": "standalone",
   "orientation": "any",

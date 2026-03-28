@@ -1,6 +1,6 @@
 const CACHE = 'memo-v1';
 const PRECACHE = [
-  './voice_memo_library.html',
+  './index.html',
   './style.css',
   './app.js',
   './icon_ET.png',
