@@ -12,15 +12,15 @@
   "categories": ["productivity", "utilities"],
   "icons": [
     {
-      "src": "icon.svg",
+      "src": "icon_ET.png",
       "sizes": "any",
-      "type": "image/svg+xml",
+      "type": "image/png",
       "purpose": "any"
     },
     {
-      "src": "icon.svg",
+      "src": "icon_ET.png",
       "sizes": "any",
-      "type": "image/svg+xml",
+      "type": "image/png",
       "purpose": "maskable"
     }
   ]

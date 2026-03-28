@@ -3,7 +3,7 @@ const PRECACHE = [
   './voice_memo_library.html',
   './style.css',
   './app.js',
-  './icon.svg',
+  './icon_ET.png',
   './manifest.json',
 ];
 
