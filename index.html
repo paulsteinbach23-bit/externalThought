@@ -63,39 +63,31 @@
         Business Ideas
         <span class="path-count" id="count-c">0</span>
       </button>
+      <!-- Dynamic custom paths injected here -->
+      <div id="customPathList"></div>
+      <button class="new-path-btn" onclick="openNewPathModal()">+ Neuer Pfad</button>
     </div>
 
-    <div class="record-zone">
-      <div class="sidebar-label" style="padding:0 0 4px">Aufnahme</div>
-      <button class="record-btn" id="recordBtn" onclick="toggleRecording()">
-        <span class="rec-indicator"></span>
-        <span id="recordBtnText">Aufnahme starten</span>
-      </button>
-      <div class="record-instructions">
-        Beginne mit:<br>
-        <span class="kw-a">"A" / "Anton"</span> → Work<br>
-        <span class="kw-b">"B" / "Berta"</span> → Research<br>
-        <span class="kw-c">"C" / "Cäsar"</span> → Business Ideas
-      </div>
-    </div>
   </aside>
 
   <!-- MAIN -->
   <main class="main">
-    <!-- Mobile filter bar -->
-    <div class="mobile-filter-bar" id="mobileFilterBar">
-      <button class="mobile-filter-btn active" data-filter="all" onclick="setFilter('all', this)">
+    <!-- Category tabs -->
+    <div class="category-tabs" id="categoryTabs">
+      <button class="cat-tab active" data-filter="all" onclick="setFilter('all', this)">
         <span class="path-dot dot-all"></span>Alle
       </button>
-      <button class="mobile-filter-btn" data-filter="A" onclick="setFilter('A', this)">
+      <button class="cat-tab" data-filter="A" onclick="setFilter('A', this)">
         <span class="path-dot dot-a"></span>Work
       </button>
-      <button class="mobile-filter-btn" data-filter="B" onclick="setFilter('B', this)">
+      <button class="cat-tab" data-filter="B" onclick="setFilter('B', this)">
         <span class="path-dot dot-b"></span>Research
       </button>
-      <button class="mobile-filter-btn" data-filter="C" onclick="setFilter('C', this)">
+      <button class="cat-tab" data-filter="C" onclick="setFilter('C', this)">
         <span class="path-dot dot-c"></span>Business
       </button>
+      <!-- Dynamic custom category tabs injected here -->
+      <span id="customCatTabs"></span>
     </div>
 
     <div class="main-header">
@@ -103,7 +95,10 @@
         <span class="badge" style="background:var(--text-muted)"></span>
         ALLE MEMOS
       </div>
-      <input class="search-box" type="text" placeholder="Suchen …" oninput="renderEntries()" id="searchInput">
+      <div class="search-row">
+        <input class="search-box" type="text" placeholder="Suchen …" oninput="renderEntries()" id="searchInput">
+        <button class="sort-toggle" id="sortToggle" onclick="toggleSort()">↓ NEU</button>
+      </div>
     </div>
 
     <div class="entries" id="entries"></div>
@@ -117,9 +112,17 @@
   </main>
 </div>
 
-<!-- Floating record button (mobile) -->
-<button class="fab-record" id="fabRecord" onclick="toggleRecording()" aria-label="Aufnahme">
-  <span class="rec-indicator"></span>
+<!-- Floating Action Button -->
+<button class="fab" id="fab" onclick="onFabClick()" aria-label="Aufnahme">
+  <svg id="fabIcon" xmlns="http://www.w3.org/2000/svg" width="26" height="26" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+    <path d="M12 1a3 3 0 0 0-3 3v8a3 3 0 0 0 6 0V4a3 3 0 0 0-3-3z"/>
+    <path d="M19 10v2a7 7 0 0 1-14 0v-2"/>
+    <line x1="12" y1="19" x2="12" y2="23"/>
+    <line x1="8" y1="23" x2="16" y2="23"/>
+  </svg>
+  <svg id="fabStopIcon" xmlns="http://www.w3.org/2000/svg" width="22" height="22" viewBox="0 0 24 24" fill="currentColor" stroke="none" style="display:none">
+    <rect x="4" y="4" width="16" height="16" rx="3"/>
+  </svg>
 </button>
 
 <!-- RECORDING MODAL -->
@@ -146,6 +149,30 @@
   </div>
 </div>
 
+<!-- PRE-RECORDING PATH OVERLAY -->
+<div class="record-path-overlay" id="recordPathOverlay">
+  <div class="record-path-header">
+    <span class="record-path-title">// KATEGORIE WÄHLEN</span>
+    <button class="editor-nav-btn" onclick="pickRecordPath(null)">Abbrechen</button>
+  </div>
+  <div class="record-path-grid">
+    <button class="record-path-btn rp-a" onclick="pickRecordPath('A')">
+      <span class="rp-letter">A</span>
+      <span class="rp-label">Work</span>
+    </button>
+    <button class="record-path-btn rp-b" onclick="pickRecordPath('B')">
+      <span class="rp-letter">B</span>
+      <span class="rp-label">Research</span>
+    </button>
+    <button class="record-path-btn rp-c" onclick="pickRecordPath('C')">
+      <span class="rp-letter">C</span>
+      <span class="rp-label">Business Ideas</span>
+    </button>
+    <!-- Dynamic custom record path buttons injected here -->
+    <div id="customRecordPaths"></div>
+  </div>
+</div>
+
 <!-- PATH PICKER MODAL -->
 <div class="modal-overlay" id="pathPickerOverlay">
   <div class="modal" style="width:420px;">
@@ -164,8 +191,26 @@
         <span class="path-dot dot-c"></span>
         <span class="path-picker-label">C — Business Ideas</span>
       </button>
+      <!-- Dynamic custom path options injected here -->
+      <div id="customPickerPaths"></div>
     </div>
     <button class="btn-small" style="align-self:flex-start; margin-top:4px;" onclick="pickPath(null)">Abbrechen</button>
+  </div>
+</div>
+
+<!-- NEW PATH MODAL -->
+<div class="modal-overlay" id="newPathOverlay">
+  <div class="modal" style="width:360px; gap:14px;">
+    <h2>// NEUER PFAD</h2>
+    <input class="new-path-input" id="newPathInput" type="text" placeholder="Pfadname …" maxlength="40"
+      onkeydown="if(event.key==='Enter') saveNewPath()"
+      oninput="document.getElementById('newPathError').textContent=''; updateNewPathPreview(this.value)">
+    <div class="new-path-preview" id="newPathPreview"></div>
+    <p class="new-path-error" id="newPathError"></p>
+    <div style="display:flex; gap:8px;">
+      <button class="record-btn" onclick="saveNewPath()" style="flex:1; border-color:var(--accent-a); color:var(--accent-a); padding:10px;">Erstellen →</button>
+      <button class="btn-small" onclick="closeNewPathModal()" style="padding:10px 16px;">Abbrechen</button>
+    </div>
   </div>
 </div>
 

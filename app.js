@@ -24,9 +24,14 @@ initTheme();
 // ───────────────────────────────────────────────
 // STATE
 // ───────────────────────────────────────────────
+const CUSTOM_PATH_COLORS = ['#e07040', '#9b6bc4', '#3a9bc4', '#c43a8a', '#3ac4b8'];
+
 let memos = JSON.parse(localStorage.getItem('voice_memos') || '[]');
+let customPaths = JSON.parse(localStorage.getItem('voice_paths') || '[]');
 let currentFilter = 'all';
+let sortOrder = 'newest';
 let editorId = null;
+let _recordPreselectedPath = null;
 let mediaRecorder = null;
 let audioChunks = [];
 let recognition = null;
@@ -36,6 +41,52 @@ let liveInterim = '';
 
 function saveMemos() {
   localStorage.setItem('voice_memos', JSON.stringify(memos));
+}
+
+function saveCustomPaths() {
+  localStorage.setItem('voice_paths', JSON.stringify(customPaths));
+}
+
+// ── PATH HELPERS ──────────────────────────────
+function getPathName(id) {
+  if (id === 'A') return 'Work';
+  if (id === 'B') return 'Research';
+  if (id === 'C') return 'Business Ideas';
+  return (customPaths.find(p => p.id === id) || {}).name || id;
+}
+
+function getPathColor(id) {
+  if (id === 'A') return 'var(--accent-a)';
+  if (id === 'B') return 'var(--accent-b)';
+  if (id === 'C') return 'var(--accent-c)';
+  const cp = customPaths.find(p => p.id === id);
+  return cp ? CUSTOM_PATH_COLORS[cp.colorIdx % CUSTOM_PATH_COLORS.length] : '#888';
+}
+
+// Returns the entry-path-tag HTML for a given path id
+function pathTagHtml(id) {
+  const dot = `<span style="width:6px;height:6px;border-radius:50%;background:currentColor;display:inline-block"></span>`;
+  const name = escHtml(getPathName(id).toUpperCase());
+  if (['A','B','C'].includes(id)) {
+    return `<div class="entry-path-tag tag-${id.toLowerCase()}">${dot}${name}</div>`;
+  }
+  const color = getPathColor(id);
+  return `<div class="entry-path-tag" style="background:${color}20;color:${color};">${dot}${name}</div>`;
+}
+
+// Applies path-tag styles to an existing DOM element
+function applyPathTagStyle(el, id) {
+  const dot = `<span style="width:6px;height:6px;border-radius:50%;background:currentColor;display:inline-block"></span>`;
+  const name = escHtml(getPathName(id).toUpperCase());
+  if (['A','B','C'].includes(id)) {
+    el.className = (el.className.replace(/\btag-[a-c]\b|\bcustom-tag\b/g, '').trim()) + ' tag-' + id.toLowerCase();
+    el.removeAttribute('style');
+  } else {
+    const color = getPathColor(id);
+    el.className = el.className.replace(/\btag-[a-c]\b/g, '').trim();
+    el.style.cssText = `background:${color}20; color:${color};`;
+  }
+  el.innerHTML = dot + name;
 }
 
 // ───────────────────────────────────────────────
@@ -50,20 +101,17 @@ updateClock();
 // ───────────────────────────────────────────────
 // FILTER
 // ───────────────────────────────────────────────
-const pathLabels = { A: 'WORK', B: 'RESEARCH', C: 'BUSINESS IDEAS' };
-const pathColors = { A: 'var(--accent-a)', B: 'var(--accent-b)', C: 'var(--accent-c)' };
 
 function setFilter(f, btn) {
   currentFilter = f;
-  // Sync both desktop sidebar and mobile filter bar
-  document.querySelectorAll('.path-btn, .mobile-filter-btn').forEach(b => b.classList.remove('active'));
-  // Activate all buttons with matching data-filter
+  // Sync sidebar, legacy mobile filter, and category tabs
+  document.querySelectorAll('.path-btn, .mobile-filter-btn, .cat-tab').forEach(b => b.classList.remove('active'));
   document.querySelectorAll(`[data-filter="${f}"]`).forEach(b => b.classList.add('active'));
   const titleEl = document.getElementById('mainTitle');
   if (f === 'all') {
     titleEl.innerHTML = '<span class="badge" style="background:var(--text-muted)"></span>ALLE MEMOS';
   } else {
-    titleEl.innerHTML = `<span class="badge" style="background:${pathColors[f]}"></span>${pathLabels[f]}`;
+    titleEl.innerHTML = `<span class="badge" style="background:${getPathColor(f)}"></span>${escHtml(getPathName(f).toUpperCase())}`;
   }
   // Close sidebar on mobile after filter selection
   const sidebar = document.getElementById('sidebar');
@@ -84,14 +132,17 @@ function renderEntries() {
     return true;
   });
 
-  // sort newest first
-  filtered.sort((a,b) => b.ts - a.ts);
+  filtered.sort((a,b) => sortOrder === 'newest' ? b.ts - a.ts : a.ts - b.ts);
 
   // update counts
   document.getElementById('count-all').textContent = memos.length;
   document.getElementById('count-a').textContent = memos.filter(m=>m.path==='A').length;
   document.getElementById('count-b').textContent = memos.filter(m=>m.path==='B').length;
   document.getElementById('count-c').textContent = memos.filter(m=>m.path==='C').length;
+  customPaths.forEach(cp => {
+    const el = document.getElementById('count-' + cp.id);
+    if (el) el.textContent = memos.filter(m=>m.path===cp.id).length;
+  });
   document.getElementById('stat-total').textContent = memos.length;
   document.getElementById('stat-a').textContent = memos.filter(m=>m.path==='A').length;
   document.getElementById('stat-b').textContent = memos.filter(m=>m.path==='B').length;
@@ -121,17 +172,12 @@ function renderEntries() {
     html += `<div class="date-group-label">${date}</div>`;
     items.forEach(m => {
       const time = new Date(m.ts).toLocaleTimeString('en-GB', {hour:'2-digit', minute:'2-digit'});
-      const tagClass = {A:'tag-a', B:'tag-b', C:'tag-c'}[m.path];
-      const pathName = {A:'WORK', B:'RESEARCH', C:'BUSINESS IDEAS'}[m.path];
       html += `
         <div class="entry-card${m.isNew?' is-new':''}" onclick="navigateToDetail('${m.id}')">
           <div>
-            <div class="entry-path-tag ${tagClass}">
-              <span style="width:6px;height:6px;border-radius:50%;background:currentColor;display:inline-block"></span>
-              ${pathName}
-            </div>
-            <div class="entry-title">${escHtml(m.title)}</div>
-            <div class="entry-preview">${escHtml(m.text.substring(0,140))}${m.text.length>140?'…':''}</div>
+            ${pathTagHtml(m.path)}
+            <div class="entry-title">${highlight(m.title, search)}</div>
+            <div class="entry-preview">${highlight(m.text.substring(0,140), search)}${m.text.length>140?'…':''}</div>
           </div>
           <div class="entry-meta">${time}</div>
         </div>`;
@@ -145,6 +191,21 @@ function escHtml(str) {
   return str.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
 }
 
+function highlight(text, query) {
+  if (!query) return escHtml(text);
+  const esc = query.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+  const re = new RegExp(`(${esc})`, 'gi');
+  return text.replace(re, '\x00$1\x00').split('\x00').map((part, i) =>
+    i % 2 === 1 ? `<mark>${escHtml(part)}</mark>` : escHtml(part)
+  ).join('');
+}
+
+function toggleSort() {
+  sortOrder = sortOrder === 'newest' ? 'oldest' : 'newest';
+  document.getElementById('sortToggle').textContent = sortOrder === 'newest' ? '↓ NEU' : '↑ ALT';
+  renderEntries();
+}
+
 function copyMemo(id, e) {
   if (e) e.stopPropagation();
   const m = memos.find(x=>x.id===id);
@@ -155,7 +216,7 @@ function downloadMemo(id, e) {
   if (e) e.stopPropagation();
   const m = memos.find(x=>x.id===id);
   if (!m) return;
-  const blob = new Blob([`MEMO // ${m.title}\nPath: ${pathLabels[m.path]}\nDate: ${new Date(m.ts).toLocaleString()}\n\n${m.text}`], {type:'text/plain'});
+  const blob = new Blob([`MEMO // ${m.title}\nPath: ${getPathName(m.path)}\nDate: ${new Date(m.ts).toLocaleString()}\n\n${m.text}`], {type:'text/plain'});
   const url = URL.createObjectURL(blob);
   const a = document.createElement('a');
   a.href = url;
@@ -178,19 +239,36 @@ function sanitizeFilename(str) {
 }
 
 // ───────────────────────────────────────────────
-// RECORDING — Web Speech API
+// FAB — path-first recording flow
 // ───────────────────────────────────────────────
-function toggleRecording() {
+function onFabClick() {
   if (isRecording) stopRecording();
-  else startRecording();
+  else openRecordPathPicker();
 }
 
+function openRecordPathPicker() {
+  document.getElementById('recordPathOverlay').classList.add('show');
+}
+
+function pickRecordPath(path) {
+  document.getElementById('recordPathOverlay').classList.remove('show');
+  if (!path) return;
+  _recordPreselectedPath = path;
+  startRecording();
+}
+
+// ───────────────────────────────────────────────
+// RECORDING — Web Speech API
+// ───────────────────────────────────────────────
 function startRecording() {
   if (!('webkitSpeechRecognition' in window || 'SpeechRecognition' in window)) {
     alert('Your browser does not support the Web Speech API.\nPlease use Chrome or Edge for voice recording.\n\nAlternatively, you can type your memo below using the manual input (double-click any empty area).');
+    _recordPreselectedPath = null;
     showManualInput();
     return;
   }
+
+  if (navigator.vibrate) navigator.vibrate(50);
 
   liveTranscript = '';
   liveInterim = '';
@@ -223,9 +301,9 @@ function startRecording() {
     console.warn('Speech recognition error:', e.error);
     if (e.error === 'not-allowed') {
       isRecording = false;
+      _recordPreselectedPath = null;
       if (recognition) { recognition.onend = null; recognition.stop(); }
-      document.getElementById('recordBtn').classList.remove('recording');
-      document.getElementById('recordBtnText').textContent = 'Start Recording';
+      setFabRecording(false);
       document.getElementById('modalOverlay').classList.remove('show');
       alert('Microphone access denied.\nPlease allow microphone access in your browser settings and try again.');
       return;
@@ -247,20 +325,27 @@ function startRecording() {
   };
 
   recognition.start();
-  document.getElementById('recordBtn').classList.add('recording');
-  document.getElementById('recordBtnText').textContent = 'Aufnahme stoppen';
   document.getElementById('modalTitle').textContent = '// AUFNAHME LÄUFT';
   document.getElementById('modalOverlay').classList.add('show');
-  document.getElementById('fabRecord').classList.add('recording');
+  setFabRecording(true);
+}
+
+function setFabRecording(on) {
+  const fab = document.getElementById('fab');
+  const micIcon  = document.getElementById('fabIcon');
+  const stopIcon = document.getElementById('fabStopIcon');
+  if (!fab) return;
+  fab.classList.toggle('recording', on);
+  if (micIcon)  micIcon.style.display  = on ? 'none'  : '';
+  if (stopIcon) stopIcon.style.display = on ? ''      : 'none';
 }
 
 function stopRecording() {
+  if (navigator.vibrate) navigator.vibrate([30, 50, 30]);
   isRecording = false;
   if (recognition) { recognition.onend = null; recognition.stop(); }
 
-  document.getElementById('recordBtn').classList.remove('recording');
-  document.getElementById('recordBtnText').textContent = 'Aufnahme starten';
-  document.getElementById('fabRecord').classList.remove('recording');
+  setFabRecording(false);
 
   // Combine confirmed finals + any pending interim
   const transcript = (liveTranscript + ' ' + liveInterim).trim();
@@ -344,22 +429,38 @@ const KEYWORD_MAP = {
 
 function processTranscript(transcript) {
   const t = transcript.trim();
-  console.log('[processTranscript] raw:', JSON.stringify(t));
+
+  // Path was pre-selected via FAB overlay — skip keyword detection
+  if (_recordPreselectedPath) {
+    const path = _recordPreselectedPath;
+    _recordPreselectedPath = null;
+    runTitleAndSave(path, t);
+    return;
+  }
 
   let path = null;
   let cleanText = t;
 
-  // Check first word against keyword map
-  const firstWord = t.split(/[\s,.:;!?]+/)[0].toLowerCase().replace(/[^a-z0-9äöü]/g, '');
-  console.log('[processTranscript] firstWord:', JSON.stringify(firstWord));
+  const firstWord = t.split(/[\s,.:;!?]+/)[0].toLowerCase().replace(/[^a-z0-9äöüß]/g, '');
 
+  // Check default keyword map
   if (KEYWORD_MAP[firstWord]) {
     path = KEYWORD_MAP[firstWord];
     const rest = t.slice(firstWord.length).replace(/^[\s,.:;]+/, '');
     cleanText = rest || t;
-    console.log('[processTranscript] path detected:', path, '| cleanText:', JSON.stringify(cleanText));
-  } else {
-    console.log('[processTranscript] no path detected, prompting user');
+  }
+
+  // Check custom path names — first word of each name (case-insensitive)
+  if (!path) {
+    for (const cp of customPaths) {
+      const cpFirst = cp.name.split(/\s+/)[0].toLowerCase().replace(/[^a-z0-9äöüß]/g, '');
+      if (cpFirst && firstWord === cpFirst) {
+        path = cp.id;
+        const rest = t.slice(cp.name.split(/\s+/)[0].length).replace(/^[\s,.:;]+/, '');
+        cleanText = rest || t;
+        break;
+      }
+    }
   }
 
   if (!path) {
@@ -413,7 +514,7 @@ function runTitleAndSave(path, cleanText) {
 // AI TITLE GENERATION
 // ───────────────────────────────────────────────
 async function generateTitle(text, path) {
-  const categoryName = {A:'Work', B:'Research', C:'Business Ideas'}[path];
+  const categoryName = getPathName(path);
   const response = await fetch('https://api.anthropic.com/v1/messages', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
@@ -437,6 +538,7 @@ async function generateTitle(text, path) {
 // INIT
 // ───────────────────────────────────────────────
 renderEntries();
+renderDynamicUI();
 
 // ───────────────────────────────────────────────
 // EDITOR
@@ -462,11 +564,18 @@ function openEditor(id, event) {
 
   // Path tag
   const tagEl = document.getElementById('editorPathTag');
-  tagEl.className  = 'editor-path-tag ' + {A:'tag-a', B:'tag-b', C:'tag-c'}[memo.path];
-  tagEl.textContent = {A:'WORK', B:'RESEARCH', C:'BUSINESS IDEAS'}[memo.path];
+  if (['A','B','C'].includes(memo.path)) {
+    tagEl.className = 'editor-path-tag tag-' + memo.path.toLowerCase();
+    tagEl.removeAttribute('style');
+  } else {
+    const ec = getPathColor(memo.path);
+    tagEl.className = 'editor-path-tag';
+    tagEl.style.cssText = `color:${ec};`;
+  }
+  tagEl.textContent = getPathName(memo.path).toUpperCase();
 
   // LLM prompt
-  const cat     = {A:'Work', B:'Research', C:'Business Ideas'}[memo.path];
+  const cat = getPathName(memo.path);
   const dateStr = new Date(memo.ts).toLocaleDateString('de-DE', {day:'2-digit', month:'long', year:'numeric'});
   document.getElementById('llmPrompt').value =
     `Kategorie: ${cat}\nDatum: ${dateStr}\n\nMeine Notiz:\n${memo.text}\n\n---\nMeine Frage / Aufgabe an dich:\n`;
@@ -550,6 +659,135 @@ function toggleSidebar() {
   backdrop.classList.toggle('show', isOpen);
 }
 
+// ───────────────────────────────────────────────
+// CUSTOM PATHS
+// ───────────────────────────────────────────────
+function renderDynamicUI() {
+  const dot = (color) => `<span class="path-dot" style="background:${color};"></span>`;
+
+  // Sidebar
+  const customList = document.getElementById('customPathList');
+  if (customList) {
+    customList.innerHTML = customPaths.map(cp => {
+      const color = getPathColor(cp.id);
+      const count = memos.filter(m=>m.path===cp.id).length;
+      const isActive = currentFilter === cp.id ? ' active' : '';
+      return `
+        <div class="custom-path-row" id="cpr-${cp.id}">
+          <button class="path-btn custom-path-btn${isActive}" data-filter="${cp.id}"
+            style="--cp-color:${color}" onclick="setFilter('${cp.id}', this)">
+            ${dot(color)}${escHtml(cp.name)}<span class="path-count" id="count-${cp.id}">${count}</span>
+          </button>
+          <button class="custom-path-delete" onclick="deleteCustomPath('${cp.id}')" title="Löschen">×</button>
+        </div>`;
+    }).join('');
+  }
+
+  // Category tabs
+  const customCatTabs = document.getElementById('customCatTabs');
+  if (customCatTabs) {
+    customCatTabs.innerHTML = customPaths.map(cp => {
+      const color = getPathColor(cp.id);
+      const isActive = currentFilter === cp.id ? ' active' : '';
+      return `<button class="cat-tab custom-cat-tab${isActive}" data-filter="${cp.id}"
+        style="--cp-color:${color}" onclick="setFilter('${cp.id}', this)">
+        ${dot(color)}${escHtml(cp.name)}</button>`;
+    }).join('');
+  }
+
+  // Pre-recording overlay
+  const customRecordPaths = document.getElementById('customRecordPaths');
+  if (customRecordPaths) {
+    customRecordPaths.innerHTML = customPaths.map(cp => {
+      const color = getPathColor(cp.id);
+      const abbr = escHtml(cp.name.substring(0,2).toUpperCase());
+      return `<button class="record-path-btn" onclick="pickRecordPath('${cp.id}')"
+        style="color:${color}; border-color:${color}40; flex:0 0 auto; min-height:80px;">
+        <span class="rp-letter" style="font-size:22px;">${abbr}</span>
+        <span class="rp-label">${escHtml(cp.name)}</span>
+      </button>`;
+    }).join('');
+  }
+
+  // Fallback path picker modal
+  const customPickerPaths = document.getElementById('customPickerPaths');
+  if (customPickerPaths) {
+    customPickerPaths.innerHTML = customPaths.map(cp => {
+      const color = getPathColor(cp.id);
+      return `<button class="path-picker-option" onclick="pickPath('${cp.id}')">
+        <span class="path-dot" style="background:${color};"></span>
+        <span class="path-picker-label">${escHtml(cp.name)}</span>
+      </button>`;
+    }).join('');
+  }
+}
+
+function openNewPathModal() {
+  document.getElementById('newPathInput').value = '';
+  document.getElementById('newPathError').textContent = '';
+  updateNewPathPreview('');
+  document.getElementById('newPathOverlay').classList.add('show');
+  setTimeout(() => document.getElementById('newPathInput').focus(), 60);
+}
+
+function closeNewPathModal() {
+  document.getElementById('newPathOverlay').classList.remove('show');
+}
+
+function updateNewPathPreview(name) {
+  const preview = document.getElementById('newPathPreview');
+  if (!preview) return;
+  if (!name.trim()) { preview.innerHTML = ''; return; }
+  const idx = customPaths.length % CUSTOM_PATH_COLORS.length;
+  const color = CUSTOM_PATH_COLORS[idx];
+  preview.innerHTML = `<div class="entry-path-tag" style="background:${color}20;color:${color};">
+    <span style="width:6px;height:6px;border-radius:50%;background:currentColor;display:inline-block;margin-right:5px;"></span>
+    ${escHtml(name.toUpperCase())}
+  </div>`;
+}
+
+function saveNewPath() {
+  const name = document.getElementById('newPathInput').value.trim();
+  const errEl = document.getElementById('newPathError');
+  if (!name) { errEl.textContent = 'Bitte einen Namen eingeben.'; return; }
+  if (name.length > 40) { errEl.textContent = 'Max. 40 Zeichen.'; return; }
+  if (customPaths.some(p => p.name.toLowerCase() === name.toLowerCase())) {
+    errEl.textContent = 'Pfad mit diesem Namen existiert bereits.'; return;
+  }
+  const colorIdx = customPaths.length % CUSTOM_PATH_COLORS.length;
+  const id = 'cp_' + Date.now();
+  customPaths.push({ id, name, colorIdx });
+  saveCustomPaths();
+  renderDynamicUI();
+  closeNewPathModal();
+}
+
+function deleteCustomPath(id) {
+  const count = memos.filter(m => m.path === id).length;
+  if (count > 0) {
+    const row = document.getElementById('cpr-' + id);
+    if (row && !row.querySelector('.cp-warn')) {
+      const warn = document.createElement('div');
+      warn.className = 'cp-warn';
+      warn.textContent = `${count} Memo${count > 1 ? 's' : ''} vorhanden — nicht löschbar`;
+      row.appendChild(warn);
+      setTimeout(() => warn.remove(), 3000);
+    }
+    return;
+  }
+  if (!confirm(`Pfad "${getPathName(id)}" löschen?`)) return;
+  customPaths = customPaths.filter(p => p.id !== id);
+  saveCustomPaths();
+  if (currentFilter === id) {
+    currentFilter = 'all';
+    document.querySelectorAll('.path-btn, .mobile-filter-btn, .cat-tab').forEach(b => b.classList.remove('active'));
+    document.querySelectorAll('[data-filter="all"]').forEach(b => b.classList.add('active'));
+    document.getElementById('mainTitle').innerHTML = '<span class="badge" style="background:var(--text-muted)"></span>ALLE MEMOS';
+  }
+  renderDynamicUI();
+  renderEntries();
+}
+
 function toggleLLMPanel() {
   const panel = document.querySelector('.llm-panel');
   panel.classList.toggle('collapsed');
@@ -588,15 +826,12 @@ function showDetail(id) {
     renderEntries();
   }
 
-  const tagClass = {A:'tag-a', B:'tag-b', C:'tag-c'}[memo.path];
-  const pathName = {A:'WORK', B:'RESEARCH', C:'BUSINESS IDEAS'}[memo.path];
   const dt = new Date(memo.ts);
   const dateStr = dt.toLocaleDateString('en-GB', {weekday:'long', year:'numeric', month:'long', day:'numeric'});
   const timeStr = dt.toLocaleTimeString('en-GB', {hour:'2-digit', minute:'2-digit'});
 
   const navPath = document.getElementById('detailNavPath');
-  navPath.className = 'detail-nav-path entry-path-tag ' + tagClass;
-  navPath.innerHTML = `<span style="width:6px;height:6px;border-radius:50%;background:currentColor;display:inline-block"></span>${pathName}`;
+  applyPathTagStyle(navPath, memo.path);
 
   document.getElementById('detailTimestamp').textContent = dateStr + ' · ' + timeStr;
   document.getElementById('detailTitle').textContent = memo.title;
