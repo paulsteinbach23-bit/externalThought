@@ -26,7 +26,6 @@ initTheme();
 // ───────────────────────────────────────────────
 let memos = JSON.parse(localStorage.getItem('voice_memos') || '[]');
 let currentFilter = 'all';
-let openId = null;
 let editorId = null;
 let mediaRecorder = null;
 let audioChunks = [];
@@ -124,30 +123,17 @@ function renderEntries() {
       const time = new Date(m.ts).toLocaleTimeString('en-GB', {hour:'2-digit', minute:'2-digit'});
       const tagClass = {A:'tag-a', B:'tag-b', C:'tag-c'}[m.path];
       const pathName = {A:'WORK', B:'RESEARCH', C:'BUSINESS IDEAS'}[m.path];
-      const isOpen = openId === m.id;
-      const expandContent = m.html
-        ? m.html
-        : escHtml(m.text).replace(/\n/g, '<br>');
       html += `
-        <div class="entry-card${isOpen?' open':''}${m.isNew?' is-new':''}" onclick="toggleEntry('${m.id}')">
+        <div class="entry-card${m.isNew?' is-new':''}" onclick="navigateToDetail('${m.id}')">
           <div>
             <div class="entry-path-tag ${tagClass}">
               <span style="width:6px;height:6px;border-radius:50%;background:currentColor;display:inline-block"></span>
               ${pathName}
             </div>
             <div class="entry-title">${escHtml(m.title)}</div>
-            ${!isOpen ? `<div class="entry-preview">${escHtml(m.text.substring(0,140))}${m.text.length>140?'…':''}</div>` : ''}
+            <div class="entry-preview">${escHtml(m.text.substring(0,140))}${m.text.length>140?'…':''}</div>
           </div>
           <div class="entry-meta">${time}</div>
-          ${isOpen ? `
-            <div class="entry-expand${m.html?' entry-expand--html':''}">${expandContent}</div>
-            <div class="entry-actions">
-              <button class="btn-small" onclick="openEditor('${m.id}', event)">BEARBEITEN</button>
-              <button class="btn-small" onclick="copyMemo('${m.id}', event)">KOPIEREN</button>
-              <button class="btn-small" onclick="downloadMemo('${m.id}', event)">DOWNLOAD</button>
-              <button class="btn-small danger" onclick="deleteMemo('${m.id}', event)">LÖSCHEN</button>
-            </div>
-          ` : ''}
         </div>`;
     });
   }
@@ -159,24 +145,14 @@ function escHtml(str) {
   return str.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
 }
 
-function toggleEntry(id) {
-  openId = openId === id ? null : id;
-  const memo = memos.find(m => m.id === id);
-  if (memo && memo.isNew) {
-    memo.isNew = false;
-    saveMemos();
-  }
-  renderEntries();
-}
-
 function copyMemo(id, e) {
-  e.stopPropagation();
+  if (e) e.stopPropagation();
   const m = memos.find(x=>x.id===id);
   if (m) navigator.clipboard.writeText(m.text);
 }
 
 function downloadMemo(id, e) {
-  e.stopPropagation();
+  if (e) e.stopPropagation();
   const m = memos.find(x=>x.id===id);
   if (!m) return;
   const blob = new Blob([`MEMO // ${m.title}\nPath: ${pathLabels[m.path]}\nDate: ${new Date(m.ts).toLocaleString()}\n\n${m.text}`], {type:'text/plain'});
@@ -189,12 +165,12 @@ function downloadMemo(id, e) {
 }
 
 function deleteMemo(id, e) {
-  e.stopPropagation();
+  if (e) e.stopPropagation();
   if (!confirm('Delete this memo?')) return;
   memos = memos.filter(x=>x.id!==id);
-  if (openId===id) openId=null;
   saveMemos();
   renderEntries();
+  if (location.hash === '#memo/' + id) navigateBack();
 }
 
 function sanitizeFilename(str) {
@@ -353,8 +329,8 @@ function saveMemoAndDownload(path, title, text) {
   memos.unshift(memo);
   saveMemos();
   document.getElementById('modalOverlay').classList.remove('show');
-  openId = memo.id;
   renderEntries();
+  location.hash = 'memo/' + memo.id;
 }
 
 // ───────────────────────────────────────────────
@@ -466,7 +442,7 @@ renderEntries();
 // EDITOR
 // ───────────────────────────────────────────────
 function openEditor(id, event) {
-  event.stopPropagation();
+  if (event) event.stopPropagation();
   const memo = memos.find(m => m.id === id);
   if (!memo) return;
   editorId = id;
@@ -580,3 +556,71 @@ function toggleLLMPanel() {
   document.getElementById('llmToggle').textContent =
     panel.classList.contains('collapsed') ? '▸' : '▾';
 }
+
+// ───────────────────────────────────────────────
+// ROUTING — hash-based
+// ───────────────────────────────────────────────
+function navigateToDetail(id) {
+  location.hash = 'memo/' + id;
+}
+
+function navigateBack() {
+  location.hash = '';
+}
+
+function handleRoute() {
+  const hash = location.hash.replace(/^#/, '');
+  if (hash.startsWith('memo/')) {
+    const id = hash.slice(5);
+    showDetail(id);
+  } else {
+    hideDetail();
+  }
+}
+
+function showDetail(id) {
+  const memo = memos.find(m => m.id === id);
+  if (!memo) { navigateBack(); return; }
+
+  if (memo.isNew) {
+    memo.isNew = false;
+    saveMemos();
+    renderEntries();
+  }
+
+  const tagClass = {A:'tag-a', B:'tag-b', C:'tag-c'}[memo.path];
+  const pathName = {A:'WORK', B:'RESEARCH', C:'BUSINESS IDEAS'}[memo.path];
+  const dt = new Date(memo.ts);
+  const dateStr = dt.toLocaleDateString('en-GB', {weekday:'long', year:'numeric', month:'long', day:'numeric'});
+  const timeStr = dt.toLocaleTimeString('en-GB', {hour:'2-digit', minute:'2-digit'});
+
+  const navPath = document.getElementById('detailNavPath');
+  navPath.className = 'detail-nav-path entry-path-tag ' + tagClass;
+  navPath.innerHTML = `<span style="width:6px;height:6px;border-radius:50%;background:currentColor;display:inline-block"></span>${pathName}`;
+
+  document.getElementById('detailTimestamp').textContent = dateStr + ' · ' + timeStr;
+  document.getElementById('detailTitle').textContent = memo.title;
+
+  const textEl = document.getElementById('detailText');
+  if (memo.html) {
+    textEl.innerHTML = memo.html;
+    textEl.className = 'detail-text detail-text--html';
+  } else {
+    textEl.textContent = memo.text;
+    textEl.className = 'detail-text';
+  }
+
+  document.getElementById('detailEditBtn').onclick     = () => openEditor(id, null);
+  document.getElementById('detailCopyBtn').onclick     = () => copyMemo(id, null);
+  document.getElementById('detailDownloadBtn').onclick = () => downloadMemo(id, null);
+  document.getElementById('detailDeleteBtn').onclick   = () => deleteMemo(id, null);
+
+  document.getElementById('detailOverlay').classList.add('show');
+}
+
+function hideDetail() {
+  document.getElementById('detailOverlay').classList.remove('show');
+}
+
+window.addEventListener('hashchange', handleRoute);
+handleRoute();

@@ -226,6 +226,27 @@
   </div>
 </div>
 
+<!-- DETAIL VIEW -->
+<div class="detail-overlay" id="detailOverlay">
+  <div class="detail-container">
+    <div class="detail-nav">
+      <button class="editor-nav-btn" onclick="navigateBack()">← Zurück</button>
+      <span class="detail-nav-path entry-path-tag" id="detailNavPath"></span>
+    </div>
+    <div class="detail-body">
+      <div class="detail-timestamp" id="detailTimestamp"></div>
+      <div class="detail-title" id="detailTitle"></div>
+      <div class="detail-text" id="detailText"></div>
+    </div>
+    <div class="detail-actions">
+      <button class="btn-small" id="detailEditBtn">BEARBEITEN</button>
+      <button class="btn-small" id="detailCopyBtn">KOPIEREN</button>
+      <button class="btn-small" id="detailDownloadBtn">DOWNLOAD</button>
+      <button class="btn-small danger" id="detailDeleteBtn">LÖSCHEN</button>
+    </div>
+  </div>
+</div>
+
 <script src="app.js"></script>
 <script>
   if ('serviceWorker' in navigator) {
