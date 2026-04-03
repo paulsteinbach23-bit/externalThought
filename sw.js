@@ -1,4 +1,4 @@
-const CACHE = 'memo-v1';
+const CACHE = 'memo-v2';
 const PRECACHE = [
   './index.html',
   './style.css',
