@@ -63,6 +63,11 @@
         Business Ideas
         <span class="path-count" id="count-c">0</span>
       </button>
+      <button class="path-btn" data-filter="D" onclick="setFilter('D', this)">
+        <span class="path-dot dot-d"></span>
+        Sonstiges
+        <span class="path-count" id="count-d">0</span>
+      </button>
       <!-- Dynamic custom paths injected here -->
       <div id="customPathList"></div>
       <button class="new-path-btn" onclick="openNewPathModal()">+ Neuer Pfad</button>
@@ -86,6 +91,9 @@
       <button class="cat-tab" data-filter="C" onclick="setFilter('C', this)">
         <span class="path-dot dot-c"></span>Business
       </button>
+      <button class="cat-tab" data-filter="D" onclick="setFilter('D', this)">
+        <span class="path-dot dot-d"></span>Sonstiges
+      </button>
       <!-- Dynamic custom category tabs injected here -->
       <span id="customCatTabs"></span>
     </div>
@@ -108,6 +116,11 @@
       <div>WORK <span id="stat-a">0</span></div>
       <div>RESEARCH <span id="stat-b">0</span></div>
       <div>BUSINESS <span id="stat-c">0</span></div>
+      <div>SONSTIGES <span id="stat-d">0</span></div>
+      <div class="sync-indicator" id="syncIndicator" style="margin-left:auto;">
+        <span class="sync-dot" id="syncDot"></span>
+        <span id="syncStatusText">–</span>
+      </div>
     </div>
   </main>
 </div>
@@ -168,6 +181,10 @@
       <span class="rp-letter">C</span>
       <span class="rp-label">Business Ideas</span>
     </button>
+    <button class="record-path-btn rp-d" onclick="pickRecordPath('D')">
+      <span class="rp-letter">D</span>
+      <span class="rp-label">Sonstiges</span>
+    </button>
     <!-- Dynamic custom record path buttons injected here -->
     <div id="customRecordPaths"></div>
   </div>
@@ -190,6 +207,10 @@
       <button class="path-picker-option" onclick="pickPath('C')">
         <span class="path-dot dot-c"></span>
         <span class="path-picker-label">C — Business Ideas</span>
+      </button>
+      <button class="path-picker-option" onclick="pickPath('D')">
+        <span class="path-dot dot-d"></span>
+        <span class="path-picker-label">D — Sonstiges</span>
       </button>
       <!-- Dynamic custom path options injected here -->
       <div id="customPickerPaths"></div>
@@ -292,6 +313,9 @@
   </div>
 </div>
 
+<script src="config.js"></script>
+<script src="vendor/supabase.js"></script>
+<script src="sync.js"></script>
 <script src="app.js"></script>
 <script>
   if ('serviceWorker' in navigator) {

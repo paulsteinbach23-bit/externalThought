@@ -26,6 +26,14 @@ initTheme();
 // ───────────────────────────────────────────────
 const CUSTOM_PATH_COLORS = ['#e07040', '#9b6bc4', '#3a9bc4', '#c43a8a', '#3ac4b8'];
 
+// One-time reset: Supabase is now the source of truth, old local-only memos are obsolete.
+if (!localStorage.getItem('memo_schema_v2')) {
+  const old = localStorage.getItem('voice_memos');
+  if (old) localStorage.setItem('voice_memos_legacy_backup', old);
+  localStorage.removeItem('voice_memos');
+  localStorage.setItem('memo_schema_v2', '1');
+}
+
 let memos = JSON.parse(localStorage.getItem('voice_memos') || '[]');
 let customPaths = JSON.parse(localStorage.getItem('voice_paths') || '[]');
 let currentFilter = 'all';
@@ -52,6 +60,7 @@ function getPathName(id) {
   if (id === 'A') return 'Work';
   if (id === 'B') return 'Research';
   if (id === 'C') return 'Business Ideas';
+  if (id === 'D') return 'Sonstiges';
   return (customPaths.find(p => p.id === id) || {}).name || id;
 }
 
@@ -59,6 +68,7 @@ function getPathColor(id) {
   if (id === 'A') return 'var(--accent-a)';
   if (id === 'B') return 'var(--accent-b)';
   if (id === 'C') return 'var(--accent-c)';
+  if (id === 'D') return 'var(--accent-d)';
   const cp = customPaths.find(p => p.id === id);
   return cp ? CUSTOM_PATH_COLORS[cp.colorIdx % CUSTOM_PATH_COLORS.length] : '#888';
 }
@@ -67,7 +77,7 @@ function getPathColor(id) {
 function pathTagHtml(id) {
   const dot = `<span style="width:6px;height:6px;border-radius:50%;background:currentColor;display:inline-block"></span>`;
   const name = escHtml(getPathName(id).toUpperCase());
-  if (['A','B','C'].includes(id)) {
+  if (['A','B','C','D'].includes(id)) {
     return `<div class="entry-path-tag tag-${id.toLowerCase()}">${dot}${name}</div>`;
   }
   const color = getPathColor(id);
@@ -78,12 +88,12 @@ function pathTagHtml(id) {
 function applyPathTagStyle(el, id) {
   const dot = `<span style="width:6px;height:6px;border-radius:50%;background:currentColor;display:inline-block"></span>`;
   const name = escHtml(getPathName(id).toUpperCase());
-  if (['A','B','C'].includes(id)) {
-    el.className = (el.className.replace(/\btag-[a-c]\b|\bcustom-tag\b/g, '').trim()) + ' tag-' + id.toLowerCase();
+  if (['A','B','C','D'].includes(id)) {
+    el.className = (el.className.replace(/\btag-[a-d]\b|\bcustom-tag\b/g, '').trim()) + ' tag-' + id.toLowerCase();
     el.removeAttribute('style');
   } else {
     const color = getPathColor(id);
-    el.className = el.className.replace(/\btag-[a-c]\b/g, '').trim();
+    el.className = el.className.replace(/\btag-[a-d]\b/g, '').trim();
     el.style.cssText = `background:${color}20; color:${color};`;
   }
   el.innerHTML = dot + name;
@@ -139,6 +149,7 @@ function renderEntries() {
   document.getElementById('count-a').textContent = memos.filter(m=>m.path==='A').length;
   document.getElementById('count-b').textContent = memos.filter(m=>m.path==='B').length;
   document.getElementById('count-c').textContent = memos.filter(m=>m.path==='C').length;
+  document.getElementById('count-d').textContent = memos.filter(m=>m.path==='D').length;
   customPaths.forEach(cp => {
     const el = document.getElementById('count-' + cp.id);
     if (el) el.textContent = memos.filter(m=>m.path===cp.id).length;
@@ -147,6 +158,7 @@ function renderEntries() {
   document.getElementById('stat-a').textContent = memos.filter(m=>m.path==='A').length;
   document.getElementById('stat-b').textContent = memos.filter(m=>m.path==='B').length;
   document.getElementById('stat-c').textContent = memos.filter(m=>m.path==='C').length;
+  document.getElementById('stat-d').textContent = memos.filter(m=>m.path==='D').length;
 
   if (filtered.length === 0) {
     container.innerHTML = `
@@ -172,14 +184,18 @@ function renderEntries() {
     html += `<div class="date-group-label">${date}</div>`;
     items.forEach(m => {
       const time = new Date(m.ts).toLocaleTimeString('en-GB', {hour:'2-digit', minute:'2-digit'});
+      const preview = m.summary || m.text;
       html += `
         <div class="entry-card${m.isNew?' is-new':''}" onclick="navigateToDetail('${m.id}')">
           <div>
             ${pathTagHtml(m.path)}
             <div class="entry-title">${highlight(m.title, search)}</div>
-            <div class="entry-preview">${highlight(m.text.substring(0,140), search)}${m.text.length>140?'…':''}</div>
+            <div class="entry-preview">${highlight(preview.substring(0,140), search)}${preview.length>140?'…':''}</div>
           </div>
-          <div class="entry-meta">${time}</div>
+          <div class="entry-meta">
+            ${time}
+            <span class="source-badge">${m.source === 'pwa' ? 'PWA' : 'MAC'}</span>
+          </div>
         </div>`;
     });
   }
@@ -230,6 +246,7 @@ function deleteMemo(id, e) {
   if (!confirm('Delete this memo?')) return;
   memos = memos.filter(x=>x.id!==id);
   saveMemos();
+  if (typeof Sync !== 'undefined') Sync.softDelete(id);
   renderEntries();
   if (location.hash === '#memo/' + id) navigateBack();
 }
@@ -404,15 +421,18 @@ document.addEventListener('DOMContentLoaded', () => {
 // ───────────────────────────────────────────────
 function saveMemoAndDownload(path, title, text) {
   const memo = {
-    id: 'memo_' + Date.now(),
+    id: crypto.randomUUID(),
     path,
     title,
     text,
     ts: Date.now(),
+    updatedAt: Date.now(),
+    source: 'pwa',
     isNew: true
   };
   memos.unshift(memo);
   saveMemos();
+  if (typeof Sync !== 'undefined') Sync.upsert(memo);
   document.getElementById('modalOverlay').classList.remove('show');
   renderEntries();
   location.hash = 'memo/' + memo.id;
@@ -425,6 +445,7 @@ const KEYWORD_MAP = {
   'a': 'A', 'anton': 'A', 'alpha': 'A', 'eins': 'A', '1': 'A',
   'b': 'B', 'berta': 'B', 'bruno': 'B', 'bravo': 'B', 'beta': 'B', 'zwei': 'B', '2': 'B',
   'c': 'C', 'cäsar': 'C', 'casar': 'C', 'caesar': 'C', 'clara': 'C', 'charlie': 'C', 'drei': 'C', '3': 'C',
+  'd': 'D', 'dora': 'D', 'delta': 'D', 'vier': 'D', '4': 'D', 'sonstiges': 'D',
 };
 
 function processTranscript(transcript) {
@@ -539,6 +560,14 @@ async function generateTitle(text, path) {
 // ───────────────────────────────────────────────
 renderEntries();
 renderDynamicUI();
+if (typeof Sync !== 'undefined') Sync.init();
+
+document.addEventListener('visibilitychange', () => {
+  if (document.visibilityState === 'visible' && typeof Sync !== 'undefined') {
+    Sync.resubscribe();
+    Sync.pull();
+  }
+});
 
 // ───────────────────────────────────────────────
 // EDITOR
@@ -564,7 +593,7 @@ function openEditor(id, event) {
 
   // Path tag
   const tagEl = document.getElementById('editorPathTag');
-  if (['A','B','C'].includes(memo.path)) {
+  if (['A','B','C','D'].includes(memo.path)) {
     tagEl.className = 'editor-path-tag tag-' + memo.path.toLowerCase();
     tagEl.removeAttribute('style');
   } else {
@@ -599,8 +628,10 @@ function saveEditor() {
   memo.text       = contentEl.innerText;
   memo.editorFont = document.getElementById('fontFamilySelect').value;
   memo.editorSize = parseInt(document.getElementById('fontSizeSelect').value);
+  memo.updatedAt  = Date.now();
 
   saveMemos();
+  if (typeof Sync !== 'undefined') Sync.upsert(memo);
   renderEntries();
   closeEditor();
 }
