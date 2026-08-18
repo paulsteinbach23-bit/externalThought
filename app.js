@@ -1,16 +1,16 @@
 // ───────────────────────────────────────────────
 // THEME
 // ───────────────────────────────────────────────
-const THEME_COLORS = { dark: '#0c1a0e', light: '#f5f2e2' };
+const THEME_COLORS = { dark: '#17140f', light: '#f3ede1' };
 
 function applyTheme(theme) {
   document.documentElement.setAttribute('data-theme', theme);
   const meta = document.getElementById('themeColorMeta');
-  if (meta) meta.content = THEME_COLORS[theme] || THEME_COLORS.dark;
+  if (meta) meta.content = THEME_COLORS[theme] || THEME_COLORS.light;
 }
 
 function initTheme() {
-  applyTheme(localStorage.getItem('memo_theme') || 'dark');
+  applyTheme(localStorage.getItem('memo_theme') || 'light');
 }
 
 function toggleTheme() {
@@ -24,7 +24,6 @@ initTheme();
 // ───────────────────────────────────────────────
 // STATE
 // ───────────────────────────────────────────────
-const CUSTOM_PATH_COLORS = ['#e07040', '#9b6bc4', '#3a9bc4', '#c43a8a', '#3ac4b8'];
 
 // One-time reset: Supabase is now the source of truth, old local-only memos are obsolete.
 if (!localStorage.getItem('memo_schema_v2')) {
@@ -35,11 +34,12 @@ if (!localStorage.getItem('memo_schema_v2')) {
 }
 
 let memos = JSON.parse(localStorage.getItem('voice_memos') || '[]');
-let customPaths = JSON.parse(localStorage.getItem('voice_paths') || '[]');
-let currentFilter = 'all';
+let captures = JSON.parse(localStorage.getItem('captures') || '[]');
+let ideaDocuments = JSON.parse(localStorage.getItem('idea_documents') || '[]');
+let currentView = 'memos'; // 'memos' | 'todos' | 'inbox' | 'docs'
 let sortOrder = 'newest';
 let editorId = null;
-let _recordPreselectedPath = null;
+let editorMode = 'memo'; // 'memo' | 'idea' — which collection saveEditor()/closeEditor() act on
 let mediaRecorder = null;
 let audioChunks = [];
 let recognition = null;
@@ -51,17 +51,23 @@ function saveMemos() {
   localStorage.setItem('voice_memos', JSON.stringify(memos));
 }
 
-function saveCustomPaths() {
-  localStorage.setItem('voice_paths', JSON.stringify(customPaths));
+function saveCaptures() {
+  localStorage.setItem('captures', JSON.stringify(captures));
 }
 
-// ── PATH HELPERS ──────────────────────────────
+function saveIdeaDocuments() {
+  localStorage.setItem('idea_documents', JSON.stringify(ideaDocuments));
+}
+
+// ── PATH HELPERS — legacy A–E memos only, kept for the old-memos view ──
+// until it's fully superseded by the to-do list (V2-P4) and inbox (V2-P5).
 function getPathName(id) {
   if (id === 'A') return 'Work';
   if (id === 'B') return 'Research';
   if (id === 'C') return 'Business Ideas';
   if (id === 'D') return 'Sonstiges';
-  return (customPaths.find(p => p.id === id) || {}).name || id;
+  if (id === 'E') return 'To-Do';
+  return id;
 }
 
 function getPathColor(id) {
@@ -69,32 +75,32 @@ function getPathColor(id) {
   if (id === 'B') return 'var(--accent-b)';
   if (id === 'C') return 'var(--accent-c)';
   if (id === 'D') return 'var(--accent-d)';
-  const cp = customPaths.find(p => p.id === id);
-  return cp ? CUSTOM_PATH_COLORS[cp.colorIdx % CUSTOM_PATH_COLORS.length] : '#888';
+  if (id === 'E') return 'var(--accent-rec)';
+  return '#888';
 }
 
 // Returns the entry-path-tag HTML for a given path id
 function pathTagHtml(id) {
   const dot = `<span style="width:6px;height:6px;border-radius:50%;background:currentColor;display:inline-block"></span>`;
   const name = escHtml(getPathName(id).toUpperCase());
-  if (['A','B','C','D'].includes(id)) {
+  if (['A','B','C','D','E'].includes(id)) {
     return `<div class="entry-path-tag tag-${id.toLowerCase()}">${dot}${name}</div>`;
   }
   const color = getPathColor(id);
-  return `<div class="entry-path-tag" style="background:${color}20;color:${color};">${dot}${name}</div>`;
+  return `<div class="entry-path-tag" style="color:${color};">${dot}${name}</div>`;
 }
 
 // Applies path-tag styles to an existing DOM element
 function applyPathTagStyle(el, id) {
   const dot = `<span style="width:6px;height:6px;border-radius:50%;background:currentColor;display:inline-block"></span>`;
   const name = escHtml(getPathName(id).toUpperCase());
-  if (['A','B','C','D'].includes(id)) {
-    el.className = (el.className.replace(/\btag-[a-d]\b|\bcustom-tag\b/g, '').trim()) + ' tag-' + id.toLowerCase();
+  if (['A','B','C','D','E'].includes(id)) {
+    el.className = (el.className.replace(/\btag-[a-e]\b/g, '').trim()) + ' tag-' + id.toLowerCase();
     el.removeAttribute('style');
   } else {
     const color = getPathColor(id);
-    el.className = el.className.replace(/\btag-[a-d]\b/g, '').trim();
-    el.style.cssText = `background:${color}20; color:${color};`;
+    el.className = el.className.replace(/\btag-[a-e]\b/g, '').trim();
+    el.style.cssText = `color:${color};`;
   }
   el.innerHTML = dot + name;
 }
@@ -109,72 +115,67 @@ setInterval(updateClock, 1000);
 updateClock();
 
 // ───────────────────────────────────────────────
-// FILTER
+// RENDER — dispatches to the current view (see setView())
 // ───────────────────────────────────────────────
+function renderEntries() {
+  const search = document.getElementById('searchInput').value.toLowerCase();
+  const newDocBtn = document.getElementById('newDocBtn');
+  if (newDocBtn) newDocBtn.style.display = currentView === 'docs' ? '' : 'none';
 
-function setFilter(f, btn) {
-  currentFilter = f;
-  // Sync sidebar, legacy mobile filter, and category tabs
-  document.querySelectorAll('.path-btn, .mobile-filter-btn, .cat-tab').forEach(b => b.classList.remove('active'));
-  document.querySelectorAll(`[data-filter="${f}"]`).forEach(b => b.classList.add('active'));
-  const titleEl = document.getElementById('mainTitle');
-  if (f === 'all') {
-    titleEl.innerHTML = '<span class="badge" style="background:var(--text-muted)"></span>ALLE MEMOS';
-  } else {
-    titleEl.innerHTML = `<span class="badge" style="background:${getPathColor(f)}"></span>${escHtml(getPathName(f).toUpperCase())}`;
-  }
-  // Close sidebar on mobile after filter selection
-  const sidebar = document.getElementById('sidebar');
-  if (sidebar && sidebar.classList.contains('open')) toggleSidebar();
+  if (currentView === 'todos') renderTodosList(search);
+  else if (currentView === 'inbox') renderInboxList(search);
+  else if (currentView === 'docs') renderDocsList(search);
+  else renderMemosList(search);
+}
+
+function setView(view) {
+  currentView = view;
+  document.querySelectorAll('.view-tab').forEach(el => {
+    el.classList.toggle('active', el.dataset.view === view);
+  });
   renderEntries();
 }
 
-// ───────────────────────────────────────────────
-// RENDER
-// ───────────────────────────────────────────────
-function renderEntries() {
+function emptyStateHtml(label, hint) {
+  return `
+    <div class="empty-state">
+      <div class="icon">◎</div>
+      <p>${label}</p>
+      <p style="font-size:10px; opacity:0.5;">${hint}</p>
+    </div>`;
+}
+
+function stripHtml(html) {
+  const div = document.createElement('div');
+  div.innerHTML = html || '';
+  return div.textContent || '';
+}
+
+function dateGroupKey(ts) {
+  return new Date(ts).toLocaleDateString('en-GB', {weekday:'long', year:'numeric', month:'long', day:'numeric'});
+}
+
+function renderMemosList(search) {
   const container = document.getElementById('entries');
-  const search = document.getElementById('searchInput').value.toLowerCase();
 
   let filtered = memos.filter(m => {
-    if (currentFilter !== 'all' && m.path !== currentFilter) return false;
     if (search && !m.title.toLowerCase().includes(search) && !m.text.toLowerCase().includes(search)) return false;
     return true;
   });
 
   filtered.sort((a,b) => sortOrder === 'newest' ? b.ts - a.ts : a.ts - b.ts);
 
-  // update counts
-  document.getElementById('count-all').textContent = memos.length;
-  document.getElementById('count-a').textContent = memos.filter(m=>m.path==='A').length;
-  document.getElementById('count-b').textContent = memos.filter(m=>m.path==='B').length;
-  document.getElementById('count-c').textContent = memos.filter(m=>m.path==='C').length;
-  document.getElementById('count-d').textContent = memos.filter(m=>m.path==='D').length;
-  customPaths.forEach(cp => {
-    const el = document.getElementById('count-' + cp.id);
-    if (el) el.textContent = memos.filter(m=>m.path===cp.id).length;
-  });
   document.getElementById('stat-total').textContent = memos.length;
-  document.getElementById('stat-a').textContent = memos.filter(m=>m.path==='A').length;
-  document.getElementById('stat-b').textContent = memos.filter(m=>m.path==='B').length;
-  document.getElementById('stat-c').textContent = memos.filter(m=>m.path==='C').length;
-  document.getElementById('stat-d').textContent = memos.filter(m=>m.path==='D').length;
 
   if (filtered.length === 0) {
-    container.innerHTML = `
-      <div class="empty-state">
-        <div class="icon">◎</div>
-        <p>NO MEMOS FOUND</p>
-        <p style="font-size:10px; opacity:0.5;">Record your first memo →</p>
-      </div>`;
+    container.innerHTML = emptyStateHtml('NO MEMOS FOUND', 'Record your first memo →');
     return;
   }
 
   // Group by date
   const groups = {};
   filtered.forEach(m => {
-    const d = new Date(m.ts);
-    const key = d.toLocaleDateString('en-GB', {weekday:'long', year:'numeric', month:'long', day:'numeric'});
+    const key = dateGroupKey(m.ts);
     if (!groups[key]) groups[key] = [];
     groups[key].push(m);
   });
@@ -185,16 +186,176 @@ function renderEntries() {
     items.forEach(m => {
       const time = new Date(m.ts).toLocaleTimeString('en-GB', {hour:'2-digit', minute:'2-digit'});
       const preview = m.summary || m.text;
+      const isTodo = m.path === 'E';
+      const isDone = isTodo && !!m.done;
+      const checkbox = isTodo
+        ? `<button class="memo-checkbox${isDone?' checked':''}" onclick="toggleMemoDone('${m.id}', event)" aria-label="Erledigt"></button>`
+        : '';
       html += `
-        <div class="entry-card${m.isNew?' is-new':''}" onclick="navigateToDetail('${m.id}')">
+        <div class="entry-card${m.isNew?' is-new':''}${isDone?' is-done':''}" onclick="navigateToDetail('${m.id}')">
           <div>
             ${pathTagHtml(m.path)}
-            <div class="entry-title">${highlight(m.title, search)}</div>
+            <div class="entry-title-row">
+              ${checkbox}
+              <div class="entry-title">${highlight(m.title, search)}</div>
+            </div>
             <div class="entry-preview">${highlight(preview.substring(0,140), search)}${preview.length>140?'…':''}</div>
           </div>
           <div class="entry-meta">
             ${time}
             <span class="source-badge">${m.source === 'pwa' ? 'PWA' : 'MAC'}</span>
+          </div>
+        </div>`;
+    });
+  }
+
+  container.innerHTML = html;
+}
+
+function renderTodosList(search) {
+  const container = document.getElementById('entries');
+
+  let items = captures.filter(c => c.kind === 'todo');
+  document.getElementById('stat-total').textContent = items.length;
+
+  items = items.filter(c => {
+    if (!search) return true;
+    return (c.title || '').toLowerCase().includes(search) || (c.transcript || '').toLowerCase().includes(search);
+  });
+  items.sort((a,b) => sortOrder === 'newest' ? b.ts - a.ts : a.ts - b.ts);
+
+  if (items.length === 0) {
+    container.innerHTML = emptyStateHtml('NO TO-DOS FOUND', 'Sag "Aufgabe …" oder "Todo …" beim Aufnehmen →');
+    return;
+  }
+
+  // Group: Heute / Diese Woche / Älter
+  const now = new Date();
+  const startOfToday = new Date(now.getFullYear(), now.getMonth(), now.getDate()).getTime();
+  const startOfWeek = startOfToday - 6 * 86400000;
+  const groups = { 'HEUTE': [], 'DIESE WOCHE': [], 'ÄLTER': [] };
+  items.forEach(c => {
+    if (c.ts >= startOfToday) groups['HEUTE'].push(c);
+    else if (c.ts >= startOfWeek) groups['DIESE WOCHE'].push(c);
+    else groups['ÄLTER'].push(c);
+  });
+
+  let html = '';
+  for (const [label, group] of Object.entries(groups)) {
+    if (!group.length) continue;
+    html += `<div class="date-group-label">${label}</div>`;
+    group.forEach(c => {
+      const time = new Date(c.ts).toLocaleTimeString('en-GB', {hour:'2-digit', minute:'2-digit'});
+      const title = c.title || c.transcript.slice(0, 60);
+      const isDone = !!c.done;
+      html += `
+        <div class="entry-card${isDone?' is-done':''}" onclick="navigateToCaptureDetail('${c.id}')">
+          <div>
+            <div class="entry-title-row">
+              <button class="memo-checkbox${isDone?' checked':''}" onclick="toggleCaptureDone('${c.id}', event)" aria-label="Erledigt"></button>
+              <div class="entry-title">${highlight(title, search)}</div>
+            </div>
+            <div class="entry-preview">${highlight(c.transcript.substring(0,140), search)}${c.transcript.length>140?'…':''}</div>
+          </div>
+          <div class="entry-meta">
+            ${time}
+            <span class="source-badge">${c.source === 'pwa' ? 'PWA' : 'MAC'}</span>
+          </div>
+        </div>`;
+    });
+  }
+
+  container.innerHTML = html;
+}
+
+function renderInboxList(search) {
+  const container = document.getElementById('entries');
+
+  let items = captures.filter(c => c.kind === 'idea' && !c.filed);
+  document.getElementById('stat-total').textContent = items.length;
+
+  items = items.filter(c => {
+    if (!search) return true;
+    return (c.title || '').toLowerCase().includes(search) || (c.transcript || '').toLowerCase().includes(search);
+  });
+  items.sort((a,b) => sortOrder === 'newest' ? b.ts - a.ts : a.ts - b.ts);
+
+  if (items.length === 0) {
+    container.innerHTML = emptyStateHtml('INBOX LEER', 'Unbearbeitete Ideen landen hier →');
+    return;
+  }
+
+  const groups = {};
+  items.forEach(c => {
+    const key = dateGroupKey(c.ts);
+    if (!groups[key]) groups[key] = [];
+    groups[key].push(c);
+  });
+
+  let html = '';
+  for (const [date, group] of Object.entries(groups)) {
+    html += `<div class="date-group-label">${date}</div>`;
+    group.forEach(c => {
+      const time = new Date(c.ts).toLocaleTimeString('en-GB', {hour:'2-digit', minute:'2-digit'});
+      const title = c.title || c.transcript.slice(0, 60);
+      html += `
+        <div class="entry-card" onclick="navigateToCaptureDetail('${c.id}')">
+          <div>
+            <div class="entry-title-row">
+              <div class="entry-title">${highlight(title, search)}</div>
+            </div>
+            <div class="entry-preview">${highlight(c.transcript.substring(0,140), search)}${c.transcript.length>140?'…':''}</div>
+          </div>
+          <div class="entry-meta">
+            ${time}
+            <span class="source-badge">${c.source === 'pwa' ? 'PWA' : 'MAC'}</span>
+          </div>
+        </div>`;
+    });
+  }
+
+  container.innerHTML = html;
+}
+
+function renderDocsList(search) {
+  const container = document.getElementById('entries');
+
+  document.getElementById('stat-total').textContent = ideaDocuments.length;
+
+  let items = ideaDocuments.filter(d => {
+    if (!search) return true;
+    return (d.title || '').toLowerCase().includes(search) || stripHtml(d.html).toLowerCase().includes(search);
+  });
+  items.sort((a,b) => sortOrder === 'newest' ? b.updatedAt - a.updatedAt : a.updatedAt - b.updatedAt);
+
+  if (items.length === 0) {
+    container.innerHTML = emptyStateHtml('NOCH KEINE DOKUMENTE', '„+ NEU" erstellt dein erstes Ideen-Dokument →');
+    return;
+  }
+
+  const groups = {};
+  items.forEach(d => {
+    const key = dateGroupKey(d.updatedAt);
+    if (!groups[key]) groups[key] = [];
+    groups[key].push(d);
+  });
+
+  let html = '';
+  for (const [date, group] of Object.entries(groups)) {
+    html += `<div class="date-group-label">${date}</div>`;
+    group.forEach(d => {
+      const time = new Date(d.updatedAt).toLocaleTimeString('en-GB', {hour:'2-digit', minute:'2-digit'});
+      const preview = stripHtml(d.html);
+      html += `
+        <div class="entry-card" onclick="openIdeaEditor('${d.id}')">
+          <div>
+            <div class="entry-title-row">
+              <div class="entry-title">${highlight(d.title, search)}</div>
+            </div>
+            <div class="entry-preview">${highlight(preview.substring(0,140), search)}${preview.length>140?'…':''}</div>
+          </div>
+          <div class="entry-meta">
+            ${time}
           </div>
         </div>`;
     });
@@ -251,27 +412,78 @@ function deleteMemo(id, e) {
   if (location.hash === '#memo/' + id) navigateBack();
 }
 
+function toggleMemoDone(id, e) {
+  if (e) e.stopPropagation();
+  const memo = memos.find(x=>x.id===id);
+  if (!memo) return;
+  memo.done = !memo.done;
+  memo.updatedAt = Date.now();
+  saveMemos();
+  if (typeof Sync !== 'undefined') Sync.upsert(memo);
+  renderEntries();
+  if (location.hash === '#memo/' + id) {
+    const checkboxEl = document.getElementById('detailCheckbox');
+    if (checkboxEl) checkboxEl.classList.toggle('checked', !!memo.done);
+    document.getElementById('detailTitle').classList.toggle('is-done', !!memo.done);
+  }
+}
+
+function copyCapture(id, e) {
+  if (e) e.stopPropagation();
+  const c = captures.find(x=>x.id===id);
+  if (c) navigator.clipboard.writeText(c.transcript);
+}
+
+function downloadCapture(id, e) {
+  if (e) e.stopPropagation();
+  const c = captures.find(x=>x.id===id);
+  if (!c) return;
+  const kindLabel = c.kind === 'todo' ? 'To-Do' : 'Idee';
+  const blob = new Blob([`${kindLabel.toUpperCase()} // ${c.title}\nDate: ${new Date(c.ts).toLocaleString()}\n\n${c.transcript}`], {type:'text/plain'});
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url;
+  a.download = sanitizeFilename(c.title) + '.txt';
+  a.click();
+  URL.revokeObjectURL(url);
+}
+
+function deleteCapture(id, e) {
+  if (e) e.stopPropagation();
+  if (!confirm('Eintrag löschen?')) return;
+  captures = captures.filter(x=>x.id!==id);
+  saveCaptures();
+  if (typeof Sync !== 'undefined') Sync.softDelete(id, 'captures');
+  renderEntries();
+  if (location.hash === '#capture/' + id) navigateBack();
+}
+
+function toggleCaptureDone(id, e) {
+  if (e) e.stopPropagation();
+  const c = captures.find(x=>x.id===id);
+  if (!c) return;
+  c.done = !c.done;
+  c.updatedAt = Date.now();
+  saveCaptures();
+  if (typeof Sync !== 'undefined') Sync.upsert(c, 'captures');
+  renderEntries();
+  if (location.hash === '#capture/' + id) {
+    const checkboxEl = document.getElementById('detailCheckbox');
+    if (checkboxEl) checkboxEl.classList.toggle('checked', !!c.done);
+    document.getElementById('detailTitle').classList.toggle('is-done', !!c.done);
+  }
+}
+
 function sanitizeFilename(str) {
   return str.replace(/[^a-z0-9_\-\s]/gi,'').replace(/\s+/g,'_').toLowerCase().substring(0,60);
 }
 
 // ───────────────────────────────────────────────
-// FAB — path-first recording flow
+// FAB — tap and talk immediately, no picker
 // ───────────────────────────────────────────────
 function onFabClick() {
   if (isRecording) stopRecording();
-  else openRecordPathPicker();
-}
-
-function openRecordPathPicker() {
-  document.getElementById('recordPathOverlay').classList.add('show');
-}
-
-function pickRecordPath(path) {
-  document.getElementById('recordPathOverlay').classList.remove('show');
-  if (!path) return;
-  _recordPreselectedPath = path;
-  startRecording();
+  else startRecording();
 }
 
 // ───────────────────────────────────────────────
@@ -280,7 +492,6 @@ function pickRecordPath(path) {
 function startRecording() {
   if (!('webkitSpeechRecognition' in window || 'SpeechRecognition' in window)) {
     alert('Your browser does not support the Web Speech API.\nPlease use Chrome or Edge for voice recording.\n\nAlternatively, you can type your memo below using the manual input (double-click any empty area).');
-    _recordPreselectedPath = null;
     showManualInput();
     return;
   }
@@ -318,7 +529,6 @@ function startRecording() {
     console.warn('Speech recognition error:', e.error);
     if (e.error === 'not-allowed') {
       isRecording = false;
-      _recordPreselectedPath = null;
       if (recognition) { recognition.onend = null; recognition.stop(); }
       setFabRecording(false);
       document.getElementById('modalOverlay').classList.remove('show');
@@ -405,7 +615,7 @@ function confirmAndProcess() {
 // MANUAL INPUT FALLBACK
 // ───────────────────────────────────────────────
 function showManualInput() {
-  const text = prompt('Memo-Text eingeben:\n(Beginne mit "A:", "B:" oder "C:")');
+  const text = prompt('Memo-Text eingeben:\n(Optional mit "Todo" oder "Aufgabe" beginnen)');
   if (text) processTranscript(text);
 }
 
@@ -419,102 +629,51 @@ document.addEventListener('DOMContentLoaded', () => {
 // ───────────────────────────────────────────────
 // SAVE MEMO + AUTO-DOWNLOAD
 // ───────────────────────────────────────────────
-function saveMemoAndDownload(path, title, text) {
-  const memo = {
+function saveCaptureAndDownload(kind, title, transcript) {
+  const capture = {
     id: crypto.randomUUID(),
-    path,
+    kind,
+    transcript,
     title,
-    text,
     ts: Date.now(),
     updatedAt: Date.now(),
     source: 'pwa',
-    isNew: true
+    done: false,
+    dueDate: null,
+    filed: false,
+    ideaDocumentId: null,
+    legacyPath: null,
   };
-  memos.unshift(memo);
-  saveMemos();
-  if (typeof Sync !== 'undefined') Sync.upsert(memo);
+  captures.unshift(capture);
+  saveCaptures();
+  if (typeof Sync !== 'undefined') Sync.upsert(capture, 'captures');
   document.getElementById('modalOverlay').classList.remove('show');
-  renderEntries();
-  location.hash = 'memo/' + memo.id;
+  if (currentView === 'todos' || currentView === 'inbox') renderEntries();
 }
 
 // ───────────────────────────────────────────────
-// PROCESS TRANSCRIPT
+// PROCESS TRANSCRIPT — trigger-word split, to-do vs. idea (VISION.md)
 // ───────────────────────────────────────────────
-const KEYWORD_MAP = {
-  'a': 'A', 'anton': 'A', 'alpha': 'A', 'eins': 'A', '1': 'A',
-  'b': 'B', 'berta': 'B', 'bruno': 'B', 'bravo': 'B', 'beta': 'B', 'zwei': 'B', '2': 'B',
-  'c': 'C', 'cäsar': 'C', 'casar': 'C', 'caesar': 'C', 'clara': 'C', 'charlie': 'C', 'drei': 'C', '3': 'C',
-  'd': 'D', 'dora': 'D', 'delta': 'D', 'vier': 'D', '4': 'D', 'sonstiges': 'D',
-};
+const TODO_TRIGGERS = { 'todo': true, 'aufgabe': true };
 
 function processTranscript(transcript) {
   const t = transcript.trim();
 
-  // Path was pre-selected via FAB overlay — skip keyword detection
-  if (_recordPreselectedPath) {
-    const path = _recordPreselectedPath;
-    _recordPreselectedPath = null;
-    runTitleAndSave(path, t);
-    return;
-  }
-
-  let path = null;
+  let kind = 'idea';
   let cleanText = t;
 
   const firstWord = t.split(/[\s,.:;!?]+/)[0].toLowerCase().replace(/[^a-z0-9äöüß]/g, '');
 
-  // Check default keyword map
-  if (KEYWORD_MAP[firstWord]) {
-    path = KEYWORD_MAP[firstWord];
+  if (TODO_TRIGGERS[firstWord]) {
+    kind = 'todo';
     const rest = t.slice(firstWord.length).replace(/^[\s,.:;]+/, '');
     cleanText = rest || t;
   }
 
-  // Check custom path names — first word of each name (case-insensitive)
-  if (!path) {
-    for (const cp of customPaths) {
-      const cpFirst = cp.name.split(/\s+/)[0].toLowerCase().replace(/[^a-z0-9äöüß]/g, '');
-      if (cpFirst && firstWord === cpFirst) {
-        path = cp.id;
-        const rest = t.slice(cp.name.split(/\s+/)[0].length).replace(/^[\s,.:;]+/, '');
-        cleanText = rest || t;
-        break;
-      }
-    }
-  }
-
-  if (!path) {
-    showPathPicker(t, t);
-    return;
-  }
-
-  runTitleAndSave(path, cleanText);
+  runTitleAndSaveCapture(kind, cleanText);
 }
 
-// Styled path picker instead of native prompt()
-let _pendingTranscript = null;
-
-function showPathPicker(previewText, fullTranscript) {
-  _pendingTranscript = fullTranscript;
-  const hint = previewText.length > 72 ? previewText.substring(0, 72) + '…' : previewText;
-  document.getElementById('pathPickerHint').textContent = `„${hint}"`;
-  document.getElementById('pathPickerOverlay').classList.add('show');
-}
-
-function pickPath(path) {
-  document.getElementById('pathPickerOverlay').classList.remove('show');
-  if (!path || !_pendingTranscript) {
-    document.getElementById('modalOverlay').classList.remove('show');
-    _pendingTranscript = null;
-    return;
-  }
-  const transcript = _pendingTranscript;
-  _pendingTranscript = null;
-  runTitleAndSave(path, transcript);
-}
-
-function runTitleAndSave(path, cleanText) {
+function runTitleAndSaveCapture(kind, cleanText) {
   document.getElementById('modalStatus').style.display = 'block';
   document.getElementById('modalStatus').innerHTML = `
     <div class="processing">
@@ -522,20 +681,20 @@ function runTitleAndSave(path, cleanText) {
       Titel wird generiert …
     </div>`;
 
-  generateTitle(cleanText, path).then(title => {
-    saveMemoAndDownload(path, title, cleanText);
+  generateTitle(cleanText, kind).then(title => {
+    saveCaptureAndDownload(kind, title, cleanText);
   }).catch(() => {
     const words = cleanText.split(' ');
     const title = words.slice(0,6).join(' ') + (words.length > 6 ? '…' : '');
-    saveMemoAndDownload(path, title, cleanText);
+    saveCaptureAndDownload(kind, title, cleanText);
   });
 }
 
 // ───────────────────────────────────────────────
 // AI TITLE GENERATION
 // ───────────────────────────────────────────────
-async function generateTitle(text, path) {
-  const categoryName = getPathName(path);
+async function generateTitle(text, kind) {
+  const kindLabel = kind === 'todo' ? 'To-Do' : 'Idee';
   const response = await fetch('https://api.anthropic.com/v1/messages', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
@@ -544,7 +703,7 @@ async function generateTitle(text, path) {
       max_tokens: 1000,
       messages: [{
         role: 'user',
-        content: `You are a title generator for voice memos in the "${categoryName}" category.\n\nGiven this voice memo text, generate a SHORT, SPECIFIC, DESCRIPTIVE title (4-8 words max). Be concise and informative. Return ONLY the title text, nothing else.\n\nMemo text:\n${text.substring(0, 800)}`
+        content: `You are a title generator for a voice-captured "${kindLabel}".\n\nGiven this text, generate a SHORT, SPECIFIC, DESCRIPTIVE title (4-8 words max). Be concise and informative. Return ONLY the title text, nothing else.\n\nText:\n${text.substring(0, 800)}`
       }]
     })
   });
@@ -556,11 +715,110 @@ async function generateTitle(text, path) {
 }
 
 // ───────────────────────────────────────────────
+// ONE-TIME MIGRATION — voice_memos (old 5-path model) → captures (todo/idea)
+// See PLAN V2, V2-P2. voice_memos is kept, untouched, as a safety net — this
+// only ever reads from it, never writes or deletes. The memo_schema_v3 flag
+// is a fast-path (skip the whole function once this browser has already
+// migrated) — but it's per-browser localStorage, so a second device or a
+// fresh/incognito session has no flag and would re-run this. The per-item
+// `captures.some(...)` check below is what actually makes this idempotent
+// across devices: captures[] was just populated by Sync.pull() from
+// Supabase (the shared source of truth), so an item already migrated on any
+// device is already present there and gets skipped — without this check, a
+// re-run would stomp newer captures-side edits (e.g. a done-toggle made via
+// the to-do list) with stale data reconstructed from voice_memos.
+// ───────────────────────────────────────────────
+async function migrateLegacyMemosToCaptures() {
+  if (localStorage.getItem('memo_schema_v3')) return;
+  if (!memos.length) { localStorage.setItem('memo_schema_v3', '1'); return; }
+
+  for (const memo of memos) {
+    if (captures.some(c => c.id === memo.id)) continue;
+    const kind = memo.path === 'E' ? 'todo' : 'idea';
+    const capture = {
+      id: memo.id,
+      kind,
+      transcript: memo.text || '',
+      title: memo.title || '',
+      ts: memo.ts,
+      updatedAt: Date.now(),
+      source: memo.source || 'mac',
+      done: kind === 'todo' ? !!memo.done : false,
+      dueDate: null,
+      filed: false,
+      ideaDocumentId: null,
+      legacyPath: kind === 'idea' ? memo.path : null,
+    };
+    captures.unshift(capture);
+    if (typeof Sync !== 'undefined') await Sync.upsert(capture, 'captures');
+  }
+  saveCaptures();
+  localStorage.setItem('memo_schema_v3', '1');
+  console.log(`Migrated ${memos.length} legacy memo(s) into captures.`);
+}
+
+// ───────────────────────────────────────────────
+// AUTH — Supabase Auth (email + password). Only gates sync, never plain
+// local use: if config.js is missing entirely, the app skips auth and works
+// local-only exactly as before (see Sync.getSession()/ensureClient()).
+// ───────────────────────────────────────────────
+async function login(e) {
+  e.preventDefault();
+  const email = document.getElementById('loginEmail').value.trim();
+  const password = document.getElementById('loginPassword').value;
+  if (!email || !password) return;
+  const btn = document.getElementById('loginSubmitBtn');
+  const status = document.getElementById('loginStatus');
+  btn.disabled = true;
+  status.textContent = 'Melde an …';
+  try {
+    await Sync.signInWithPassword(email, password);
+    onLoggedIn();
+  } catch (err) {
+    status.textContent = 'Fehler: ' + (err.message || err);
+    btn.disabled = false;
+  }
+}
+
+function logout() {
+  if (typeof Sync !== 'undefined') Sync.signOut();
+}
+
+// Called both directly from login()'s success path and from bootApp()'s
+// SIGNED_IN listener (e.g. on a page load that already has a session) — the
+// guard makes it safe to fire from both without double-subscribing.
+let _loggedInHandled = false;
+function onLoggedIn() {
+  if (_loggedInHandled) return;
+  _loggedInHandled = true;
+  document.getElementById('loginOverlay').classList.remove('show');
+  document.getElementById('logoutBtn').style.display = '';
+  Sync.init();
+  Sync.pull().then(migrateLegacyMemosToCaptures);
+}
+
+async function bootApp() {
+  renderEntries();
+  if (typeof Sync === 'undefined') return;
+
+  Sync.onAuthChange((event, session) => {
+    if (event === 'SIGNED_IN' && session) onLoggedIn();
+    else if (event === 'SIGNED_OUT') location.reload();
+  });
+
+  const session = await Sync.getSession();
+  if (session) {
+    onLoggedIn();
+  } else if (typeof SUPABASE_URL !== 'undefined') {
+    // Supabase is configured but nobody's logged in — block sync until they are.
+    document.getElementById('loginOverlay').classList.add('show');
+  }
+}
+
+// ───────────────────────────────────────────────
 // INIT
 // ───────────────────────────────────────────────
-renderEntries();
-renderDynamicUI();
-if (typeof Sync !== 'undefined') Sync.init();
+bootApp();
 
 document.addEventListener('visibilitychange', () => {
   if (document.visibilityState === 'visible' && typeof Sync !== 'undefined') {
@@ -577,6 +835,8 @@ function openEditor(id, event) {
   const memo = memos.find(m => m.id === id);
   if (!memo) return;
   editorId = id;
+  editorMode = 'memo';
+  document.getElementById('editorNavTitle').textContent = '// MEMO BEARBEITEN';
 
   // Title
   document.getElementById('editorTitle').textContent = memo.title;
@@ -593,7 +853,7 @@ function openEditor(id, event) {
 
   // Path tag
   const tagEl = document.getElementById('editorPathTag');
-  if (['A','B','C','D'].includes(memo.path)) {
+  if (['A','B','C','D','E'].includes(memo.path)) {
     tagEl.className = 'editor-path-tag tag-' + memo.path.toLowerCase();
     tagEl.removeAttribute('style');
   } else {
@@ -619,6 +879,21 @@ function closeEditor() {
 
 function saveEditor() {
   if (!editorId) return;
+
+  if (editorMode === 'idea') {
+    const doc = ideaDocuments.find(d => d.id === editorId);
+    if (!doc) return;
+    const contentEl = document.getElementById('editorContent');
+    doc.title     = document.getElementById('editorTitle').textContent.trim() || doc.title;
+    doc.html      = contentEl.innerHTML;
+    doc.updatedAt = Date.now();
+    saveIdeaDocuments();
+    if (typeof Sync !== 'undefined') Sync.upsert(doc, 'idea_documents');
+    if (currentView === 'docs') renderEntries();
+    closeEditor();
+    return;
+  }
+
   const memo = memos.find(m => m.id === editorId);
   if (!memo) return;
 
@@ -634,6 +909,140 @@ function saveEditor() {
   if (typeof Sync !== 'undefined') Sync.upsert(memo);
   renderEntries();
   closeEditor();
+}
+
+// ───────────────────────────────────────────────
+// IDEA DOCUMENTS — inbox items get filed into these (V2-P5)
+// ───────────────────────────────────────────────
+// Awaits the remote write before returning — callers that immediately create
+// a captures row with a foreign key to this document (fileIntoNewDocument())
+// depend on the document existing server-side first, or Postgrest 409s on
+// the FK. Sync.upsert() resolves either after a successful write or after
+// queuing to the outbox, so this is safe offline too.
+async function makeIdeaDocument(title) {
+  const doc = {
+    id: crypto.randomUUID(),
+    title,
+    html: '',
+    canvas: { nodes: [], edges: [] },
+    viewport: null,
+    ts: Date.now(),
+    updatedAt: Date.now(),
+  };
+  ideaDocuments.unshift(doc);
+  saveIdeaDocuments();
+  if (typeof Sync !== 'undefined') await Sync.upsert(doc, 'idea_documents');
+  return doc;
+}
+
+async function createIdeaDocument() {
+  const title = prompt('Titel für das neue Dokument:');
+  if (!title) return;
+  const doc = await makeIdeaDocument(title.trim());
+  if (currentView === 'docs') renderEntries();
+  openIdeaEditor(doc.id);
+}
+
+function openIdeaEditor(id) {
+  const doc = ideaDocuments.find(d => d.id === id);
+  if (!doc) return;
+  editorId = id;
+  editorMode = 'idea';
+  document.getElementById('editorNavTitle').textContent = '// DOKUMENT BEARBEITEN';
+
+  document.getElementById('editorTitle').textContent = doc.title;
+
+  const contentEl = document.getElementById('editorContent');
+  contentEl.innerHTML = doc.html || '';
+  contentEl.style.fontFamily = '';
+  contentEl.style.fontSize = '';
+
+  document.getElementById('fontFamilySelect').value = '-apple-system, BlinkMacSystemFont, sans-serif';
+  document.getElementById('fontSizeSelect').value = 15;
+
+  const tagEl = document.getElementById('editorPathTag');
+  tagEl.className = 'editor-path-tag';
+  tagEl.style.cssText = 'color:var(--text-muted);';
+  tagEl.textContent = 'IDEE';
+
+  const dateStr = new Date(doc.ts).toLocaleDateString('de-DE', {day:'2-digit', month:'long', year:'numeric'});
+  document.getElementById('llmPrompt').value =
+    `Dokument: ${doc.title}\nErstellt: ${dateStr}\n\nInhalt:\n${stripHtml(doc.html)}\n\n---\nMeine Frage / Aufgabe an dich:\n`;
+
+  document.getElementById('editorOverlay').classList.add('show');
+}
+
+// ───────────────────────────────────────────────
+// MERGE PICKER — file an inbox idea into a document (V2-P5)
+// ───────────────────────────────────────────────
+let _mergeCaptureId = null;
+
+function openMergePicker(captureId, e) {
+  if (e) e.stopPropagation();
+  _mergeCaptureId = captureId;
+
+  const list = document.getElementById('mergeDocList');
+  if (!ideaDocuments.length) {
+    list.innerHTML = `<p style="font-family:var(--mono); font-size:10px; color:var(--text-muted);">Noch keine Dokumente — erstelle unten ein neues.</p>`;
+  } else {
+    list.innerHTML = ideaDocuments.map(d =>
+      `<button class="merge-doc-btn" onclick="fileIntoDocument('${d.id}')">${escHtml(d.title)}</button>`
+    ).join('');
+  }
+
+  document.getElementById('mergeNewTitle').value = '';
+  // The detail overlay (z-index 200) sits above the modal overlay (z-index
+  // 100) — hide it first or the picker renders fully occluded/unclickable.
+  document.getElementById('detailOverlay').classList.remove('show');
+  document.getElementById('mergePickerOverlay').classList.add('show');
+}
+
+// Cancel path only — fileIntoDocument() below handles its own success path
+// (it always navigates away rather than restoring the detail overlay).
+function closeMergePicker() {
+  document.getElementById('mergePickerOverlay').classList.remove('show');
+  _mergeCaptureId = null;
+  if (location.hash.startsWith('#capture/')) {
+    document.getElementById('detailOverlay').classList.add('show');
+  }
+}
+
+function fileIntoDocument(docId) {
+  if (!_mergeCaptureId) return;
+  const c = captures.find(x => x.id === _mergeCaptureId);
+  if (!c) { closeMergePicker(); return; }
+
+  // Filing only marked the capture `filed` — it never actually copied the
+  // idea's content anywhere, so the document stayed empty. Append it as a
+  // section so opening the document shows what was filed into it. Canvas
+  // (V2-P6) will eventually give ideas a proper transcript node instead of
+  // this being appended as plain HTML.
+  const doc = ideaDocuments.find(d => d.id === docId);
+  if (doc) {
+    const block = `<p><strong>${escHtml(c.title || '')}</strong></p><p>${escHtml(c.transcript).replace(/\n/g, '<br>')}</p><hr>`;
+    doc.html = (doc.html || '') + block;
+    doc.updatedAt = Date.now();
+    saveIdeaDocuments();
+    if (typeof Sync !== 'undefined') Sync.upsert(doc, 'idea_documents');
+  }
+
+  c.filed = true;
+  c.ideaDocumentId = docId;
+  c.updatedAt = Date.now();
+  saveCaptures();
+  if (typeof Sync !== 'undefined') Sync.upsert(c, 'captures');
+
+  document.getElementById('mergePickerOverlay').classList.remove('show');
+  _mergeCaptureId = null;
+  renderEntries();
+  navigateBack();
+}
+
+async function fileIntoNewDocument() {
+  const title = document.getElementById('mergeNewTitle').value.trim();
+  if (!title) { alert('Bitte einen Titel eingeben.'); return; }
+  const doc = await makeIdeaDocument(title);
+  fileIntoDocument(doc.id);
 }
 
 function applyFontFamily(value) {
@@ -683,142 +1092,6 @@ function copyLLMPrompt() {
   });
 }
 
-function toggleSidebar() {
-  const sidebar  = document.getElementById('sidebar');
-  const backdrop = document.getElementById('sidebarBackdrop');
-  const isOpen   = sidebar.classList.toggle('open');
-  backdrop.classList.toggle('show', isOpen);
-}
-
-// ───────────────────────────────────────────────
-// CUSTOM PATHS
-// ───────────────────────────────────────────────
-function renderDynamicUI() {
-  const dot = (color) => `<span class="path-dot" style="background:${color};"></span>`;
-
-  // Sidebar
-  const customList = document.getElementById('customPathList');
-  if (customList) {
-    customList.innerHTML = customPaths.map(cp => {
-      const color = getPathColor(cp.id);
-      const count = memos.filter(m=>m.path===cp.id).length;
-      const isActive = currentFilter === cp.id ? ' active' : '';
-      return `
-        <div class="custom-path-row" id="cpr-${cp.id}">
-          <button class="path-btn custom-path-btn${isActive}" data-filter="${cp.id}"
-            style="--cp-color:${color}" onclick="setFilter('${cp.id}', this)">
-            ${dot(color)}${escHtml(cp.name)}<span class="path-count" id="count-${cp.id}">${count}</span>
-          </button>
-          <button class="custom-path-delete" onclick="deleteCustomPath('${cp.id}')" title="Löschen">×</button>
-        </div>`;
-    }).join('');
-  }
-
-  // Category tabs
-  const customCatTabs = document.getElementById('customCatTabs');
-  if (customCatTabs) {
-    customCatTabs.innerHTML = customPaths.map(cp => {
-      const color = getPathColor(cp.id);
-      const isActive = currentFilter === cp.id ? ' active' : '';
-      return `<button class="cat-tab custom-cat-tab${isActive}" data-filter="${cp.id}"
-        style="--cp-color:${color}" onclick="setFilter('${cp.id}', this)">
-        ${dot(color)}${escHtml(cp.name)}</button>`;
-    }).join('');
-  }
-
-  // Pre-recording overlay
-  const customRecordPaths = document.getElementById('customRecordPaths');
-  if (customRecordPaths) {
-    customRecordPaths.innerHTML = customPaths.map(cp => {
-      const color = getPathColor(cp.id);
-      const abbr = escHtml(cp.name.substring(0,2).toUpperCase());
-      return `<button class="record-path-btn" onclick="pickRecordPath('${cp.id}')"
-        style="color:${color}; border-color:${color}40; flex:0 0 auto; min-height:80px;">
-        <span class="rp-letter" style="font-size:22px;">${abbr}</span>
-        <span class="rp-label">${escHtml(cp.name)}</span>
-      </button>`;
-    }).join('');
-  }
-
-  // Fallback path picker modal
-  const customPickerPaths = document.getElementById('customPickerPaths');
-  if (customPickerPaths) {
-    customPickerPaths.innerHTML = customPaths.map(cp => {
-      const color = getPathColor(cp.id);
-      return `<button class="path-picker-option" onclick="pickPath('${cp.id}')">
-        <span class="path-dot" style="background:${color};"></span>
-        <span class="path-picker-label">${escHtml(cp.name)}</span>
-      </button>`;
-    }).join('');
-  }
-}
-
-function openNewPathModal() {
-  document.getElementById('newPathInput').value = '';
-  document.getElementById('newPathError').textContent = '';
-  updateNewPathPreview('');
-  document.getElementById('newPathOverlay').classList.add('show');
-  setTimeout(() => document.getElementById('newPathInput').focus(), 60);
-}
-
-function closeNewPathModal() {
-  document.getElementById('newPathOverlay').classList.remove('show');
-}
-
-function updateNewPathPreview(name) {
-  const preview = document.getElementById('newPathPreview');
-  if (!preview) return;
-  if (!name.trim()) { preview.innerHTML = ''; return; }
-  const idx = customPaths.length % CUSTOM_PATH_COLORS.length;
-  const color = CUSTOM_PATH_COLORS[idx];
-  preview.innerHTML = `<div class="entry-path-tag" style="background:${color}20;color:${color};">
-    <span style="width:6px;height:6px;border-radius:50%;background:currentColor;display:inline-block;margin-right:5px;"></span>
-    ${escHtml(name.toUpperCase())}
-  </div>`;
-}
-
-function saveNewPath() {
-  const name = document.getElementById('newPathInput').value.trim();
-  const errEl = document.getElementById('newPathError');
-  if (!name) { errEl.textContent = 'Bitte einen Namen eingeben.'; return; }
-  if (name.length > 40) { errEl.textContent = 'Max. 40 Zeichen.'; return; }
-  if (customPaths.some(p => p.name.toLowerCase() === name.toLowerCase())) {
-    errEl.textContent = 'Pfad mit diesem Namen existiert bereits.'; return;
-  }
-  const colorIdx = customPaths.length % CUSTOM_PATH_COLORS.length;
-  const id = 'cp_' + Date.now();
-  customPaths.push({ id, name, colorIdx });
-  saveCustomPaths();
-  renderDynamicUI();
-  closeNewPathModal();
-}
-
-function deleteCustomPath(id) {
-  const count = memos.filter(m => m.path === id).length;
-  if (count > 0) {
-    const row = document.getElementById('cpr-' + id);
-    if (row && !row.querySelector('.cp-warn')) {
-      const warn = document.createElement('div');
-      warn.className = 'cp-warn';
-      warn.textContent = `${count} Memo${count > 1 ? 's' : ''} vorhanden — nicht löschbar`;
-      row.appendChild(warn);
-      setTimeout(() => warn.remove(), 3000);
-    }
-    return;
-  }
-  if (!confirm(`Pfad "${getPathName(id)}" löschen?`)) return;
-  customPaths = customPaths.filter(p => p.id !== id);
-  saveCustomPaths();
-  if (currentFilter === id) {
-    currentFilter = 'all';
-    document.querySelectorAll('.path-btn, .mobile-filter-btn, .cat-tab').forEach(b => b.classList.remove('active'));
-    document.querySelectorAll('[data-filter="all"]').forEach(b => b.classList.add('active'));
-    document.getElementById('mainTitle').innerHTML = '<span class="badge" style="background:var(--text-muted)"></span>ALLE MEMOS';
-  }
-  renderDynamicUI();
-  renderEntries();
-}
-
 function toggleLLMPanel() {
   const panel = document.querySelector('.llm-panel');
   panel.classList.toggle('collapsed');
@@ -833,6 +1106,10 @@ function navigateToDetail(id) {
   location.hash = 'memo/' + id;
 }
 
+function navigateToCaptureDetail(id) {
+  location.hash = 'capture/' + id;
+}
+
 function navigateBack() {
   location.hash = '';
 }
@@ -840,8 +1117,9 @@ function navigateBack() {
 function handleRoute() {
   const hash = location.hash.replace(/^#/, '');
   if (hash.startsWith('memo/')) {
-    const id = hash.slice(5);
-    showDetail(id);
+    showDetail(hash.slice(5));
+  } else if (hash.startsWith('capture/')) {
+    showCaptureDetail(hash.slice(8));
   } else {
     hideDetail();
   }
@@ -867,6 +1145,16 @@ function showDetail(id) {
   document.getElementById('detailTimestamp').textContent = dateStr + ' · ' + timeStr;
   document.getElementById('detailTitle').textContent = memo.title;
 
+  const checkboxEl = document.getElementById('detailCheckbox');
+  if (memo.path === 'E') {
+    checkboxEl.style.display = '';
+    checkboxEl.classList.toggle('checked', !!memo.done);
+    checkboxEl.onclick = () => toggleMemoDone(id, null);
+  } else {
+    checkboxEl.style.display = 'none';
+  }
+  document.getElementById('detailTitle').classList.toggle('is-done', memo.path === 'E' && !!memo.done);
+
   const textEl = document.getElementById('detailText');
   if (memo.html) {
     textEl.innerHTML = memo.html;
@@ -876,10 +1164,68 @@ function showDetail(id) {
     textEl.className = 'detail-text';
   }
 
+  document.getElementById('detailEditBtn').style.display = '';
   document.getElementById('detailEditBtn').onclick     = () => openEditor(id, null);
   document.getElementById('detailCopyBtn').onclick     = () => copyMemo(id, null);
   document.getElementById('detailDownloadBtn').onclick = () => downloadMemo(id, null);
   document.getElementById('detailDeleteBtn').onclick   = () => deleteMemo(id, null);
+  document.getElementById('detailFileBtn').style.display = 'none';
+
+  document.getElementById('detailOverlay').classList.add('show');
+}
+
+function applyCaptureTagStyle(el, kind) {
+  const dot = `<span style="width:6px;height:6px;border-radius:50%;background:currentColor;display:inline-block"></span>`;
+  const label = kind === 'todo' ? 'TO-DO' : 'IDEE';
+  if (kind === 'todo') {
+    el.className = 'entry-path-tag tag-e';
+    el.removeAttribute('style');
+  } else {
+    el.className = 'entry-path-tag';
+    el.style.cssText = 'color:var(--text-muted);';
+  }
+  el.innerHTML = dot + label;
+}
+
+function showCaptureDetail(id) {
+  const c = captures.find(x => x.id === id);
+  if (!c) { navigateBack(); return; }
+
+  const dt = new Date(c.ts);
+  const dateStr = dt.toLocaleDateString('en-GB', {weekday:'long', year:'numeric', month:'long', day:'numeric'});
+  const timeStr = dt.toLocaleTimeString('en-GB', {hour:'2-digit', minute:'2-digit'});
+
+  applyCaptureTagStyle(document.getElementById('detailNavPath'), c.kind);
+
+  document.getElementById('detailTimestamp').textContent = dateStr + ' · ' + timeStr;
+  document.getElementById('detailTitle').textContent = c.title || c.transcript.slice(0, 60);
+
+  const checkboxEl = document.getElementById('detailCheckbox');
+  if (c.kind === 'todo') {
+    checkboxEl.style.display = '';
+    checkboxEl.classList.toggle('checked', !!c.done);
+    checkboxEl.onclick = () => toggleCaptureDone(id, null);
+  } else {
+    checkboxEl.style.display = 'none';
+  }
+  document.getElementById('detailTitle').classList.toggle('is-done', c.kind === 'todo' && !!c.done);
+
+  const textEl = document.getElementById('detailText');
+  textEl.textContent = c.transcript;
+  textEl.className = 'detail-text';
+
+  document.getElementById('detailEditBtn').style.display = 'none';
+  document.getElementById('detailCopyBtn').onclick     = () => copyCapture(id, null);
+  document.getElementById('detailDownloadBtn').onclick = () => downloadCapture(id, null);
+  document.getElementById('detailDeleteBtn').onclick   = () => deleteCapture(id, null);
+
+  const fileBtn = document.getElementById('detailFileBtn');
+  if (c.kind === 'idea' && !c.filed) {
+    fileBtn.style.display = '';
+    fileBtn.onclick = () => openMergePicker(id, null);
+  } else {
+    fileBtn.style.display = 'none';
+  }
 
   document.getElementById('detailOverlay').classList.add('show');
 }

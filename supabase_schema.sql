@@ -8,12 +8,13 @@ create table voice_memos (
   deleted_at  timestamptz,
   source_name text,
   source      text default 'mac',      -- 'mac' | 'pwa'
-  path        text,                    -- 'A' | 'B' | 'C' | 'D' | 'cp_…'
+  path        text,                    -- 'A' | 'B' | 'C' | 'D' | 'E' | 'cp_…'
   category    text,                    -- Ollama-Rohwert, nur informativ
   title       text,
   summary     text,
   transcript  text,
-  body_html   text                     -- Editor-Output der PWA
+  body_html   text,                    -- Editor-Output der PWA
+  done        boolean default false    -- Nur relevant für Pfad E (To-Do)
 );
 
 -- Idempotenz: re-syncende iCloud-Dateien / LaunchAgent-Neustarts

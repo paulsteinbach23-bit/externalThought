@@ -1,11 +1,27 @@
 // ───────────────────────────────────────────────
-// SYNC — Supabase read/write layer (see PLAN.md)
-// Depends on: config.js (SUPABASE_URL/KEY), vendor/supabase.js, app.js (memos/renderEntries/etc.)
+// SYNC — Supabase read/write layer (see PLAN.md, PLAN V2)
+// Depends on: config.js (SUPABASE_URL/KEY), vendor/supabase.js,
+// app.js (memos/captures/renderEntries/saveMemos/saveCaptures/etc.)
+//
+// V2-P0: extended from a single hardcoded 'voice_memos' table to a small
+// entity registry. The 'legacy' entity is voice_memos/memos[] — untouched
+// behavior, and the default entity for every public method so existing
+// app.js call sites (Sync.upsert(memo), Sync.softDelete(id)) keep working
+// unchanged.
+//
+// V2-P1: 'captures' is now owned by app.js (the `captures`/`saveCaptures()`
+// globals, mirroring how `memos`/`saveMemos()` already work for 'legacy') —
+// app.js writes new recordings into it directly.
+//
+// V2-P5: 'idea_documents' is now owned by app.js too (the `ideaDocuments`/
+// `saveIdeaDocuments()` globals), for the same reason — app.js needs to
+// create/edit documents directly, not just read them via Sync.ideaDocuments.
 // ───────────────────────────────────────────────
 const Sync = (() => {
   let client = null;
   let channel = null;
   let status = 'offline';
+  let currentUser = null;
 
   const OUTBOX_KEY = 'memo_outbox';
 
@@ -27,8 +43,13 @@ const Sync = (() => {
     if (text) text.textContent = STATUS_LABELS[s] || s;
   }
 
-  // Remote row → local memo shape (PLAN.md §4.2 mapping table)
-  function mapRemoteToLocal(row) {
+  // ── Legacy entity (voice_memos / memos[]) — mapping unchanged from pre-V2 ──
+  function pathFromCategory(category) {
+    const map = { 'Arbeit': 'A', 'Forschung': 'B', 'Business-Idee': 'C', 'Sonstiges': 'D' };
+    return map[category] || 'D';
+  }
+
+  function mapRemoteToLocalLegacy(row) {
     return {
       id: row.id,
       ts: Date.parse(row.created_at),
@@ -40,68 +61,12 @@ const Sync = (() => {
       path: row.path || pathFromCategory(row.category),
       source: row.source || 'mac',
       isNew: false,
+      done: !!row.done,
     };
   }
 
-  function pathFromCategory(category) {
-    const map = { 'Arbeit': 'A', 'Forschung': 'B', 'Business-Idee': 'C', 'Sonstiges': 'D' };
-    return map[category] || 'D';
-  }
-
-  function mergeRow(row) {
-    if (row.deleted_at) {
-      memos = memos.filter(m => m.id !== row.id);
-      saveMemos();
-      return;
-    }
-    const mapped = mapRemoteToLocal(row);
-    const idx = memos.findIndex(m => m.id === row.id);
-    if (idx === -1) memos.unshift(mapped);
-    else memos[idx] = mapped;
-    saveMemos();
-  }
-
-  async function pull() {
-    if (!client) return;
-    setStatus('syncing');
-    const { data, error } = await client
-      .from('voice_memos')
-      .select('*')
-      .is('deleted_at', null)
-      .order('created_at', { ascending: false });
-    if (error) {
-      console.warn('Sync.pull failed:', error.message);
-      setStatus('offline');
-      return;
-    }
-    memos = data.map(mapRemoteToLocal);
-    saveMemos();
-    renderEntries();
-    setStatus('online');
-  }
-
-  function subscribe() {
-    if (!client) return;
-    channel = client
-      .channel('voice_memos_changes')
-      .on('postgres_changes', { event: '*', schema: 'public', table: 'voice_memos' }, (payload) => {
-        const row = payload.eventType === 'DELETE' ? payload.old : payload.new;
-        if (!row) return;
-        mergeRow(row);
-        renderEntries();
-      })
-      .subscribe();
-  }
-
-  function resubscribe() {
-    if (channel) client.removeChannel(channel);
-    subscribe();
-  }
-
-  // Raw network calls — throw on any failure (network or Postgrest error).
-  // No outbox handling here; callers below decide what to do with the failure.
-  async function _upsertRemote(memo) {
-    const { error } = await client.from('voice_memos').upsert({
+  function mapToRemoteLegacy(memo) {
+    return {
       id: memo.id,
       updated_at: new Date(memo.updatedAt || Date.now()).toISOString(),
       source: memo.source || 'pwa',
@@ -109,56 +74,232 @@ const Sync = (() => {
       title: memo.title,
       transcript: memo.text,
       body_html: memo.html || null,
-    }, { onConflict: 'id' });
+      done: !!memo.done,
+      user_id: currentUser ? currentUser.id : null,
+    };
+  }
+
+  // ── captures entity (V2-P0: schema only, no app.js UI yet) ──
+  function mapRemoteToLocalCapture(row) {
+    return {
+      id: row.id,
+      ts: Date.parse(row.created_at),
+      updatedAt: row.updated_at ? Date.parse(row.updated_at) : Date.parse(row.created_at),
+      source: row.source || 'pwa',
+      kind: row.kind,
+      transcript: row.transcript || '',
+      title: row.title || '',
+      done: !!row.done,
+      dueDate: row.due_date || null,
+      filed: !!row.filed,
+      ideaDocumentId: row.idea_document_id || null,
+      legacyPath: row.legacy_path || null,
+    };
+  }
+
+  function mapToRemoteCapture(c) {
+    return {
+      id: c.id,
+      updated_at: new Date(c.updatedAt || Date.now()).toISOString(),
+      source: c.source || 'pwa',
+      kind: c.kind,
+      transcript: c.transcript,
+      title: c.title || null,
+      done: !!c.done,
+      due_date: c.dueDate || null,
+      filed: !!c.filed,
+      idea_document_id: c.ideaDocumentId || null,
+      legacy_path: c.legacyPath || null,
+      user_id: currentUser ? currentUser.id : null,
+    };
+  }
+
+  // ── idea_documents entity (V2-P0: schema only, no app.js UI yet) ──
+  function mapRemoteToLocalIdea(row) {
+    return {
+      id: row.id,
+      ts: Date.parse(row.created_at),
+      updatedAt: row.updated_at ? Date.parse(row.updated_at) : Date.parse(row.created_at),
+      title: row.title || '',
+      html: row.body_html || '',
+      canvas: row.canvas || { nodes: [], edges: [] },
+      viewport: row.viewport || null,
+    };
+  }
+
+  function mapToRemoteIdea(doc) {
+    return {
+      id: doc.id,
+      updated_at: new Date(doc.updatedAt || Date.now()).toISOString(),
+      title: doc.title,
+      body_html: doc.html || null,
+      canvas: doc.canvas || { nodes: [], edges: [] },
+      viewport: doc.viewport || null,
+      user_id: currentUser ? currentUser.id : null,
+    };
+  }
+
+  // ── Entity registry ──────────────────────────────
+  // 'legacy' must stay the default entity on every public method below —
+  // that's what keeps existing app.js call sites (Sync.upsert(memo), no
+  // second argument) working unchanged.
+  const ENTITIES = {
+    legacy: {
+      table: 'voice_memos',
+      arrayRef: () => memos,
+      setArray: (arr) => { memos = arr; },
+      save: () => saveMemos(),
+      mapToLocal: mapRemoteToLocalLegacy,
+      mapToRemote: mapToRemoteLegacy,
+    },
+    captures: {
+      table: 'captures',
+      arrayRef: () => captures,
+      setArray: (arr) => { captures = arr; },
+      save: () => saveCaptures(),
+      mapToLocal: mapRemoteToLocalCapture,
+      mapToRemote: mapToRemoteCapture,
+    },
+    idea_documents: {
+      table: 'idea_documents',
+      arrayRef: () => ideaDocuments,
+      setArray: (arr) => { ideaDocuments = arr; },
+      save: () => saveIdeaDocuments(),
+      mapToLocal: mapRemoteToLocalIdea,
+      mapToRemote: mapToRemoteIdea,
+    },
+  };
+
+  function entityOf(key) {
+    const e = ENTITIES[key];
+    if (!e) throw new Error(`Sync: unknown entity "${key}"`);
+    return e;
+  }
+
+  function mergeRowFor(entityKey, row) {
+    const e = entityOf(entityKey);
+    const arr = e.arrayRef();
+    if (row.deleted_at) {
+      e.setArray(arr.filter(x => x.id !== row.id));
+      e.save();
+      return;
+    }
+    const mapped = e.mapToLocal(row);
+    const idx = arr.findIndex(x => x.id === row.id);
+    if (idx === -1) arr.unshift(mapped);
+    else arr[idx] = mapped;
+    e.setArray(arr);
+    e.save();
+  }
+
+  async function pullEntity(entityKey) {
+    const e = entityOf(entityKey);
+    const { data, error } = await client
+      .from(e.table)
+      .select('*')
+      .is('deleted_at', null)
+      .order('created_at', { ascending: false });
+    if (error) {
+      console.warn(`Sync.pull(${entityKey}) failed:`, error.message);
+      return false;
+    }
+    e.setArray(data.map(e.mapToLocal));
+    e.save();
+    return true;
+  }
+
+  // Raw network calls — throw on any failure (network or Postgrest error).
+  // No outbox handling here; callers below decide what to do with the failure.
+  async function _upsertRemoteFor(entityKey, item) {
+    const e = entityOf(entityKey);
+    const { error } = await client.from(e.table).upsert(e.mapToRemote(item), { onConflict: 'id' });
     if (error) throw error;
   }
 
-  async function _softDeleteRemote(id) {
+  async function _softDeleteRemoteFor(entityKey, id) {
+    const e = entityOf(entityKey);
     const { error } = await client
-      .from('voice_memos')
+      .from(e.table)
       .update({ deleted_at: new Date().toISOString() })
       .eq('id', id);
     if (error) throw error;
   }
 
+  async function pull() {
+    if (!client) return;
+    setStatus('syncing');
+    const ok = await pullEntity('legacy');
+    if (!ok) { setStatus('offline'); return; }
+    renderEntries();
+    await pullEntity('captures');
+    await pullEntity('idea_documents');
+    setStatus('online');
+  }
+
+  function subscribe() {
+    if (!client) return;
+    channel = client.channel('sync_changes');
+    Object.keys(ENTITIES).forEach((key) => {
+      const e = ENTITIES[key];
+      channel = channel.on('postgres_changes', { event: '*', schema: 'public', table: e.table }, (payload) => {
+        const row = payload.eventType === 'DELETE' ? payload.old : payload.new;
+        if (!row) return;
+        mergeRowFor(key, row);
+        renderEntries();
+      });
+    });
+    channel.subscribe();
+  }
+
+  function resubscribe() {
+    if (channel) client.removeChannel(channel);
+    subscribe();
+  }
+
   // Public write API — used by app.js. Queues to the outbox on failure.
-  async function upsert(memo) {
-    if (!client) { queueOutbox('upsert', memo); return; }
+  // `entity` defaults to 'legacy' so existing single-argument call sites
+  // (Sync.upsert(memo), Sync.softDelete(id)) are unaffected.
+  async function upsert(item, entity = 'legacy') {
+    if (!client) { queueOutbox('upsert', item, entity); return; }
     try {
-      await _upsertRemote(memo);
+      await _upsertRemoteFor(entity, item);
     } catch (err) {
-      console.warn('Sync.upsert failed, queuing:', err.message || err);
-      queueOutbox('upsert', memo);
+      console.warn(`Sync.upsert(${entity}) failed, queuing:`, err.message || err);
+      queueOutbox('upsert', item, entity);
     }
   }
 
-  async function softDelete(id) {
-    if (!client) { queueOutbox('delete', { id }); return; }
+  async function softDelete(id, entity = 'legacy') {
+    if (!client) { queueOutbox('delete', { id }, entity); return; }
     try {
-      await _softDeleteRemote(id);
+      await _softDeleteRemoteFor(entity, id);
     } catch (err) {
-      console.warn('Sync.softDelete failed, queuing:', err.message || err);
-      queueOutbox('delete', { id });
+      console.warn(`Sync.softDelete(${entity}) failed, queuing:`, err.message || err);
+      queueOutbox('delete', { id }, entity);
     }
   }
 
-  function queueOutbox(op, payload) {
+  function queueOutbox(op, payload, entity = 'legacy') {
     const outbox = getOutbox();
-    outbox.push({ op, payload, ts: Date.now() });
+    outbox.push({ op, entity, payload, ts: Date.now() });
     setOutbox(outbox);
   }
 
   // Drains the outbox against the raw remote calls — a failure here leaves
   // the item in `remaining` instead of re-queuing a duplicate via queueOutbox.
+  // Items queued before this entity field existed have no `entity` key —
+  // default them to 'legacy' so nothing already sitting in a user's outbox
+  // breaks on this deploy.
   async function flushOutbox() {
     if (!client) return;
     const outbox = getOutbox();
     if (!outbox.length) return;
     const remaining = [];
     for (const item of outbox) {
+      const entityKey = item.entity || 'legacy';
       try {
-        if (item.op === 'upsert') await _upsertRemote(item.payload);
-        else if (item.op === 'delete') await _softDeleteRemote(item.payload.id);
+        if (item.op === 'upsert') await _upsertRemoteFor(entityKey, item.payload);
+        else if (item.op === 'delete') await _softDeleteRemoteFor(entityKey, item.payload.id);
       } catch (err) {
         remaining.push(item);
       }
@@ -166,18 +307,70 @@ const Sync = (() => {
     setOutbox(remaining);
   }
 
-  function init() {
+  // Creates the Supabase client on first use and wires up an auth-state
+  // listener that keeps `currentUser` current — every mapToRemote* function
+  // above reads it to stamp `user_id` on writes. Idempotent: safe to call
+  // from getSession()/onAuthChange() before init() has run, and again from
+  // init() itself once a session is confirmed.
+  function ensureClient() {
+    if (client) return true;
     if (typeof SUPABASE_URL === 'undefined' || typeof SUPABASE_ANON_KEY === 'undefined') {
-      console.warn('Sync.init: config.js missing, staying offline (local-only).');
+      console.warn('Sync: config.js missing, staying offline (local-only).');
       setStatus('offline');
-      return;
+      return false;
     }
     client = supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
+    client.auth.onAuthStateChange((_event, session) => {
+      currentUser = session ? session.user : null;
+    });
+    return true;
+  }
+
+  async function getSession() {
+    if (!ensureClient()) return null;
+    const { data } = await client.auth.getSession();
+    currentUser = data.session ? data.session.user : null;
+    return data.session;
+  }
+
+  function onAuthChange(cb) {
+    if (!ensureClient()) return;
+    client.auth.onAuthStateChange((event, session) => cb(event, session));
+  }
+
+  // Password login, not magic link — completes synchronously with no email
+  // round-trip and no redirect-URL to configure per device/origin.
+  async function signInWithPassword(email, password) {
+    if (!ensureClient()) throw new Error('Supabase ist nicht konfiguriert (config.js fehlt).');
+    const { data, error } = await client.auth.signInWithPassword({ email, password });
+    if (error) throw error;
+    currentUser = data.session ? data.session.user : null;
+    return data.session;
+  }
+
+  async function signOut() {
+    if (!client) return;
+    await client.auth.signOut();
+    currentUser = null;
+  }
+
+  // Starts data sync — only call this once a session is confirmed (see
+  // app.js's bootApp()). Auth itself (getSession/onAuthChange/signInWithPassword)
+  // works before this via ensureClient(), independent of whether sync has
+  // started.
+  function init() {
+    if (!ensureClient()) return;
     pull();
     subscribe();
     flushOutbox();
     window.addEventListener('online', flushOutbox);
   }
 
-  return { init, pull, subscribe, resubscribe, upsert, softDelete, flushOutbox, get status() { return status; } };
+  return {
+    init, pull, subscribe, resubscribe, upsert, softDelete, flushOutbox,
+    getSession, onAuthChange, signInWithPassword, signOut,
+    get status() { return status; },
+    get captures() { return captures; },
+    get ideaDocuments() { return ideaDocuments; },
+  };
 })();

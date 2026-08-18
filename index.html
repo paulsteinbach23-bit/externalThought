@@ -7,22 +7,19 @@
 
 <!-- PWA -->
 <link rel="manifest" href="manifest.json">
-<meta name="theme-color" id="themeColorMeta" content="#0c1a0e">
+<meta name="theme-color" id="themeColorMeta" content="#f3ede1">
 <meta name="apple-mobile-web-app-capable" content="yes">
 <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
 <meta name="apple-mobile-web-app-title" content="MEMO">
 <link rel="apple-touch-icon" href="icon_ET.png">
 
-<link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@300;400;500;600&family=IBM+Plex+Sans:wght@300;400;500;600&display=swap" rel="stylesheet">
+<link href="https://fonts.googleapis.com/css2?family=Source+Serif+4:ital,wght@0,400;0,500;0,600;0,700;1,400;1,600&family=Courier+Prime:wght@400;700&display=swap" rel="stylesheet">
 <link rel="stylesheet" href="style.css">
 </head>
 <body>
 
 <header>
   <div class="header-left">
-    <button class="sidebar-toggle" id="sidebarToggle" onclick="toggleSidebar()" aria-label="Menü">
-      <span></span><span></span><span></span>
-    </button>
     <div class="logo">MEMO<span>://</span>LIBRARY</div>
   </div>
   <div class="header-right">
@@ -32,80 +29,24 @@
       <span class="toggle-track"><span class="toggle-thumb"></span></span>
       <span class="toggle-icon sun">☀</span>
     </button>
+    <button class="sort-toggle" id="logoutBtn" onclick="logout()" style="display:none;">ABMELDEN</button>
   </div>
 </header>
 
-<!-- Mobile sidebar backdrop -->
-<div class="sidebar-backdrop" id="sidebarBackdrop" onclick="toggleSidebar()"></div>
-
 <div class="app">
-  <!-- SIDEBAR -->
-  <aside class="sidebar" id="sidebar">
-    <div class="sidebar-section">
-      <div class="sidebar-label">Bibliothek</div>
-      <button class="path-btn active" data-filter="all" onclick="setFilter('all', this)">
-        <span class="path-dot dot-all"></span>
-        Alle Memos
-        <span class="path-count" id="count-all">0</span>
-      </button>
-      <button class="path-btn" data-filter="A" onclick="setFilter('A', this)">
-        <span class="path-dot dot-a"></span>
-        Work
-        <span class="path-count" id="count-a">0</span>
-      </button>
-      <button class="path-btn" data-filter="B" onclick="setFilter('B', this)">
-        <span class="path-dot dot-b"></span>
-        Research
-        <span class="path-count" id="count-b">0</span>
-      </button>
-      <button class="path-btn" data-filter="C" onclick="setFilter('C', this)">
-        <span class="path-dot dot-c"></span>
-        Business Ideas
-        <span class="path-count" id="count-c">0</span>
-      </button>
-      <button class="path-btn" data-filter="D" onclick="setFilter('D', this)">
-        <span class="path-dot dot-d"></span>
-        Sonstiges
-        <span class="path-count" id="count-d">0</span>
-      </button>
-      <!-- Dynamic custom paths injected here -->
-      <div id="customPathList"></div>
-      <button class="new-path-btn" onclick="openNewPathModal()">+ Neuer Pfad</button>
-    </div>
-
-  </aside>
-
   <!-- MAIN -->
   <main class="main">
-    <!-- Category tabs -->
-    <div class="category-tabs" id="categoryTabs">
-      <button class="cat-tab active" data-filter="all" onclick="setFilter('all', this)">
-        <span class="path-dot dot-all"></span>Alle
-      </button>
-      <button class="cat-tab" data-filter="A" onclick="setFilter('A', this)">
-        <span class="path-dot dot-a"></span>Work
-      </button>
-      <button class="cat-tab" data-filter="B" onclick="setFilter('B', this)">
-        <span class="path-dot dot-b"></span>Research
-      </button>
-      <button class="cat-tab" data-filter="C" onclick="setFilter('C', this)">
-        <span class="path-dot dot-c"></span>Business
-      </button>
-      <button class="cat-tab" data-filter="D" onclick="setFilter('D', this)">
-        <span class="path-dot dot-d"></span>Sonstiges
-      </button>
-      <!-- Dynamic custom category tabs injected here -->
-      <span id="customCatTabs"></span>
-    </div>
-
     <div class="main-header">
-      <div class="main-title" id="mainTitle">
-        <span class="badge" style="background:var(--text-muted)"></span>
-        ALLE MEMOS
+      <div class="view-tabs" id="viewTabs">
+        <button class="view-tab active" data-view="memos" onclick="setView('memos')">NOTIZEN</button>
+        <button class="view-tab" data-view="todos" onclick="setView('todos')">TO-DO</button>
+        <button class="view-tab" data-view="inbox" onclick="setView('inbox')">IDEEN</button>
+        <button class="view-tab" data-view="docs" onclick="setView('docs')">DOKUMENTE</button>
       </div>
       <div class="search-row">
         <input class="search-box" type="text" placeholder="Suchen …" oninput="renderEntries()" id="searchInput">
         <button class="sort-toggle" id="sortToggle" onclick="toggleSort()">↓ NEU</button>
+        <button class="sort-toggle" id="newDocBtn" onclick="createIdeaDocument()" style="display:none;">+ NEU</button>
       </div>
     </div>
 
@@ -113,10 +54,6 @@
 
     <div class="status-bar">
       <div>GESAMT <span id="stat-total">0</span></div>
-      <div>WORK <span id="stat-a">0</span></div>
-      <div>RESEARCH <span id="stat-b">0</span></div>
-      <div>BUSINESS <span id="stat-c">0</span></div>
-      <div>SONSTIGES <span id="stat-d">0</span></div>
       <div class="sync-indicator" id="syncIndicator" style="margin-left:auto;">
         <span class="sync-dot" id="syncDot"></span>
         <span id="syncStatusText">–</span>
@@ -162,86 +99,13 @@
   </div>
 </div>
 
-<!-- PRE-RECORDING PATH OVERLAY -->
-<div class="record-path-overlay" id="recordPathOverlay">
-  <div class="record-path-header">
-    <span class="record-path-title">// KATEGORIE WÄHLEN</span>
-    <button class="editor-nav-btn" onclick="pickRecordPath(null)">Abbrechen</button>
-  </div>
-  <div class="record-path-grid">
-    <button class="record-path-btn rp-a" onclick="pickRecordPath('A')">
-      <span class="rp-letter">A</span>
-      <span class="rp-label">Work</span>
-    </button>
-    <button class="record-path-btn rp-b" onclick="pickRecordPath('B')">
-      <span class="rp-letter">B</span>
-      <span class="rp-label">Research</span>
-    </button>
-    <button class="record-path-btn rp-c" onclick="pickRecordPath('C')">
-      <span class="rp-letter">C</span>
-      <span class="rp-label">Business Ideas</span>
-    </button>
-    <button class="record-path-btn rp-d" onclick="pickRecordPath('D')">
-      <span class="rp-letter">D</span>
-      <span class="rp-label">Sonstiges</span>
-    </button>
-    <!-- Dynamic custom record path buttons injected here -->
-    <div id="customRecordPaths"></div>
-  </div>
-</div>
-
-<!-- PATH PICKER MODAL -->
-<div class="modal-overlay" id="pathPickerOverlay">
-  <div class="modal" style="width:420px;">
-    <h2>// KATEGORIE WÄHLEN</h2>
-    <p class="path-picker-hint" id="pathPickerHint"></p>
-    <div class="path-picker-btns">
-      <button class="path-picker-option" onclick="pickPath('A')">
-        <span class="path-dot dot-a"></span>
-        <span class="path-picker-label">A — Work</span>
-      </button>
-      <button class="path-picker-option" onclick="pickPath('B')">
-        <span class="path-dot dot-b"></span>
-        <span class="path-picker-label">B — Research</span>
-      </button>
-      <button class="path-picker-option" onclick="pickPath('C')">
-        <span class="path-dot dot-c"></span>
-        <span class="path-picker-label">C — Business Ideas</span>
-      </button>
-      <button class="path-picker-option" onclick="pickPath('D')">
-        <span class="path-dot dot-d"></span>
-        <span class="path-picker-label">D — Sonstiges</span>
-      </button>
-      <!-- Dynamic custom path options injected here -->
-      <div id="customPickerPaths"></div>
-    </div>
-    <button class="btn-small" style="align-self:flex-start; margin-top:4px;" onclick="pickPath(null)">Abbrechen</button>
-  </div>
-</div>
-
-<!-- NEW PATH MODAL -->
-<div class="modal-overlay" id="newPathOverlay">
-  <div class="modal" style="width:360px; gap:14px;">
-    <h2>// NEUER PFAD</h2>
-    <input class="new-path-input" id="newPathInput" type="text" placeholder="Pfadname …" maxlength="40"
-      onkeydown="if(event.key==='Enter') saveNewPath()"
-      oninput="document.getElementById('newPathError').textContent=''; updateNewPathPreview(this.value)">
-    <div class="new-path-preview" id="newPathPreview"></div>
-    <p class="new-path-error" id="newPathError"></p>
-    <div style="display:flex; gap:8px;">
-      <button class="record-btn" onclick="saveNewPath()" style="flex:1; border-color:var(--accent-a); color:var(--accent-a); padding:10px;">Erstellen →</button>
-      <button class="btn-small" onclick="closeNewPathModal()" style="padding:10px 16px;">Abbrechen</button>
-    </div>
-  </div>
-</div>
-
 <!-- EDITOR OVERLAY -->
 <div class="editor-overlay" id="editorOverlay">
   <div class="editor-container">
 
     <div class="editor-nav">
       <button class="editor-nav-btn" onclick="closeEditor()">← Zurück</button>
-      <span class="editor-nav-title">// MEMO BEARBEITEN</span>
+      <span class="editor-nav-title" id="editorNavTitle">// MEMO BEARBEITEN</span>
       <button class="editor-nav-btn editor-save-btn" onclick="saveEditor()">Speichern</button>
     </div>
 
@@ -301,15 +165,44 @@
     </div>
     <div class="detail-body">
       <div class="detail-timestamp" id="detailTimestamp"></div>
-      <div class="detail-title" id="detailTitle"></div>
+      <div class="detail-title-row">
+        <button class="memo-checkbox" id="detailCheckbox" style="display:none;" aria-label="Erledigt"></button>
+        <div class="detail-title" id="detailTitle"></div>
+      </div>
       <div class="detail-text" id="detailText"></div>
     </div>
     <div class="detail-actions">
       <button class="btn-small" id="detailEditBtn">BEARBEITEN</button>
+      <button class="btn-small" id="detailFileBtn" style="display:none;">EINORDNEN</button>
       <button class="btn-small" id="detailCopyBtn">KOPIEREN</button>
       <button class="btn-small" id="detailDownloadBtn">DOWNLOAD</button>
       <button class="btn-small danger" id="detailDeleteBtn">LÖSCHEN</button>
     </div>
+  </div>
+</div>
+
+<!-- LOGIN — Supabase Auth (email + password), gates sync when config.js is present -->
+<div class="modal-overlay" id="loginOverlay">
+  <div class="modal">
+    <h2>// ANMELDEN</h2>
+    <form id="loginForm" onsubmit="login(event)" style="display:flex; flex-direction:column; gap:12px;">
+      <input class="merge-input" id="loginEmail" type="email" placeholder="deine@email.de" required autocomplete="email">
+      <input class="merge-input" id="loginPassword" type="password" placeholder="Passwort" required autocomplete="current-password">
+      <button class="record-btn" id="loginSubmitBtn" style="border-color:var(--accent-a); color:var(--accent-a);" type="submit">Anmelden →</button>
+    </form>
+    <div id="loginStatus" style="font-family:var(--mono); font-size:10px; color:var(--text-muted); min-height:14px;"></div>
+  </div>
+</div>
+
+<!-- MERGE PICKER — file an inbox idea into an idea document -->
+<div class="modal-overlay" id="mergePickerOverlay">
+  <div class="modal">
+    <h2>// IN DOKUMENT EINORDNEN</h2>
+    <div class="merge-doc-list" id="mergeDocList"></div>
+    <div class="merge-divider">— oder neu —</div>
+    <input class="merge-input" id="mergeNewTitle" type="text" placeholder="Neuer Dokumenttitel …">
+    <button class="record-btn" style="border-color:var(--accent-a); color:var(--accent-a);" onclick="fileIntoNewDocument()">Neues Dokument erstellen →</button>
+    <button class="editor-nav-btn" onclick="closeMergePicker()">Abbrechen</button>
   </div>
 </div>
 
