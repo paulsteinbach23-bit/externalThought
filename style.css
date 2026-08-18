@@ -95,13 +95,6 @@ header {
   gap: 18px;
 }
 
-.header-meta {
-  font-family: var(--mono);
-  font-size: 11px;
-  color: var(--text-muted);
-  letter-spacing: 0.1em;
-}
-
 /* ── THEME TOGGLE ─────────────────── */
 .theme-toggle {
   background: none;
@@ -110,20 +103,7 @@ header {
   padding: 4px 0;
   display: flex;
   align-items: center;
-  gap: 8px;
 }
-
-.toggle-icon {
-  font-size: 12px;
-  line-height: 1;
-  color: var(--text-muted);
-  transition: color var(--t);
-  user-select: none;
-}
-
-.toggle-icon.moon { color: var(--text-dim); }
-[data-theme="light"] .toggle-icon.moon { color: var(--text-muted); }
-[data-theme="light"] .toggle-icon.sun  { color: var(--accent-c); }
 
 .toggle-track {
   width: 36px;

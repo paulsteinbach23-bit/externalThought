@@ -106,15 +106,6 @@ function applyPathTagStyle(el, id) {
 }
 
 // ───────────────────────────────────────────────
-// CLOCK
-// ───────────────────────────────────────────────
-function updateClock() {
-  document.getElementById('clock').textContent = new Date().toLocaleTimeString('en-GB', {hour12:false});
-}
-setInterval(updateClock, 1000);
-updateClock();
-
-// ───────────────────────────────────────────────
 // RENDER — dispatches to the current view (see setView())
 // ───────────────────────────────────────────────
 function renderEntries() {
