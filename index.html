@@ -132,6 +132,7 @@
       <button class="toolbar-btn" onmousedown="event.preventDefault(); document.execCommand('italic')" title="Kursiv"><i>I</i></button>
       <div class="toolbar-divider"></div>
       <button class="toolbar-btn toolbar-btn--label" onclick="insertEditorTable()">＋ Tabelle</button>
+      <button class="toolbar-btn toolbar-btn--label" onclick="openLLMPrompt()">// LLM</button>
       <div class="toolbar-spacer"></div>
       <span class="editor-path-tag" id="editorPathTag"></span>
     </div>
@@ -141,18 +142,17 @@
       <div class="editor-content" id="editorContent" contenteditable="true" placeholder="Inhalt …"></div>
     </div>
 
-    <div class="llm-panel">
-      <div class="llm-panel-header" onclick="toggleLLMPanel()">
-        <span class="llm-panel-title">// LLM PROMPT</span>
-        <span class="llm-panel-toggle" id="llmToggle">▾</span>
-      </div>
-      <div class="llm-panel-body">
-        <p class="llm-description">Prompt mit Memo-Inhalt — direkt in ein KI-Modell deiner Wahl einfügen</p>
-        <textarea class="llm-textarea" id="llmPrompt"></textarea>
-        <button class="llm-copy-btn" onclick="copyLLMPrompt()">Prompt kopieren</button>
-      </div>
-    </div>
+  </div>
+</div>
 
+<!-- LLM PROMPT — on demand only, opened via the editor toolbar's "// LLM" button -->
+<div class="modal-overlay" id="llmPromptOverlay">
+  <div class="modal">
+    <h2>// LLM PROMPT</h2>
+    <p class="llm-description">Prompt mit Memo-Inhalt — direkt in ein KI-Modell deiner Wahl einfügen</p>
+    <textarea class="llm-textarea" id="llmPrompt"></textarea>
+    <button class="llm-copy-btn" onclick="copyLLMPrompt()">Prompt kopieren</button>
+    <button class="editor-nav-btn" onclick="closeLLMPrompt()">Schließen</button>
   </div>
 </div>
 

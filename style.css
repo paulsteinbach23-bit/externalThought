@@ -505,6 +505,10 @@ header {
 }
 .modal-overlay.show { display: flex; }
 
+/* Opened from inside .editor-overlay (z-index 200) — needs to layer above
+   it, not hide it, since closing it should return to the still-open editor. */
+#llmPromptOverlay { z-index: 250; }
+
 .modal {
   background: var(--surface);
   border: 1px solid var(--border-bright);
@@ -788,8 +792,7 @@ mark {
   .modal { padding: 22px 18px; gap: 14px; }
   .editor-body { padding: 24px 20px; }
   .editor-toolbar { padding: 8px 14px; }
-  .editor-nav { padding: 12px 16px; }
-  .llm-panel-body { padding: 4px 16px 16px; }
+  .editor-nav { padding: 12px 16px; padding-top: calc(12px + env(safe-area-inset-top)); }
 }
 
 /* ── NEW MEMO HIGHLIGHT ─────────────── */
@@ -840,6 +843,7 @@ mark {
   align-items: center;
   justify-content: space-between;
   padding: 13px 24px;
+  padding-top: calc(13px + env(safe-area-inset-top));
   border-bottom: 1px solid var(--border);
   background: var(--surface);
   gap: 16px;
@@ -1013,44 +1017,7 @@ mark {
   background: var(--surface);
 }
 
-/* LLM panel */
-.llm-panel {
-  border-top: 1px solid var(--border);
-  background: var(--surface);
-  transition: background var(--t-slow), border-color var(--t-slow);
-}
-
-.llm-panel-header {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  padding: 11px 24px;
-  cursor: pointer;
-  transition: background var(--t);
-}
-.llm-panel-header:hover { background: var(--surface2); }
-
-.llm-panel-title {
-  font-family: var(--mono);
-  font-size: 10px;
-  letter-spacing: 0.18em;
-  color: var(--text-muted);
-}
-
-.llm-panel-toggle {
-  font-size: 11px;
-  color: var(--text-muted);
-  transition: transform var(--t);
-}
-
-.llm-panel-body {
-  padding: 4px 24px 20px;
-  display: flex;
-  flex-direction: column;
-  gap: 10px;
-}
-.llm-panel.collapsed .llm-panel-body { display: none; }
-
+/* LLM prompt — on-demand modal, opened via the editor toolbar's "// LLM" button */
 .llm-description {
   font-family: var(--mono);
   font-size: 10px;

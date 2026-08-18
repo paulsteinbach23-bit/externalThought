@@ -1092,11 +1092,12 @@ function copyLLMPrompt() {
   });
 }
 
-function toggleLLMPanel() {
-  const panel = document.querySelector('.llm-panel');
-  panel.classList.toggle('collapsed');
-  document.getElementById('llmToggle').textContent =
-    panel.classList.contains('collapsed') ? '▸' : '▾';
+function openLLMPrompt() {
+  document.getElementById('llmPromptOverlay').classList.add('show');
+}
+
+function closeLLMPrompt() {
+  document.getElementById('llmPromptOverlay').classList.remove('show');
 }
 
 // ───────────────────────────────────────────────
