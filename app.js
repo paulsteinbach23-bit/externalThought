@@ -832,6 +832,7 @@ function openEditor(id, event) {
   editorMode = 'memo';
   document.getElementById('editorNavTitle').textContent = '// MEMO BEARBEITEN';
   document.getElementById('editorDeleteBtn').style.display = 'none';
+  document.getElementById('editorCanvasLink').style.display = 'none';
 
   // Title
   document.getElementById('editorTitle').textContent = memo.title;
@@ -945,6 +946,7 @@ function openIdeaEditor(id) {
   editorMode = 'idea';
   document.getElementById('editorNavTitle').textContent = '// DOKUMENT BEARBEITEN';
   document.getElementById('editorDeleteBtn').style.display = '';
+  document.getElementById('editorCanvasLink').style.display = '';
 
   document.getElementById('editorTitle').textContent = doc.title;
 
@@ -986,6 +988,43 @@ function deleteIdeaDocument(id) {
   if (typeof Sync !== 'undefined') Sync.softDelete(id, 'idea_documents');
   closeEditor();
   renderEntries();
+}
+
+// ───────────────────────────────────────────────
+// CANVAS ENTRY — separate full-screen view reached from inside the text
+// editor, not a mode/tab of it (see PLAN V2-P6). Mutually exclusive with
+// #editorOverlay: opening one hides the other.
+// ───────────────────────────────────────────────
+function openCanvasView() {
+  if (!editorId || editorMode !== 'idea') return;
+  const doc = ideaDocuments.find(d => d.id === editorId);
+  if (!doc) return;
+
+  // Flush pending text-editor changes first so canvas doesn't open against
+  // a stale doc.title/html — same fields saveEditor()'s idea branch writes.
+  const contentEl = document.getElementById('editorContent');
+  doc.title = document.getElementById('editorTitle').textContent.trim() || doc.title;
+  doc.html = contentEl.innerHTML;
+  doc.updatedAt = Date.now();
+  saveIdeaDocuments();
+  if (typeof Sync !== 'undefined') Sync.upsert(doc, 'idea_documents');
+
+  document.getElementById('editorOverlay').classList.remove('show');
+  document.getElementById('canvasNavTitle').textContent = doc.title;
+  document.getElementById('canvasOverlay').classList.add('show');
+  Canvas.init(
+    document.getElementById('canvasViewport'),
+    document.getElementById('canvasSurface'),
+    document.getElementById('canvasEdges')
+  );
+  Canvas.loadDocument(doc);
+}
+
+function closeCanvasView() {
+  Canvas.flushSave();
+  Canvas.unloadDocument();
+  document.getElementById('canvasOverlay').classList.remove('show');
+  document.getElementById('editorOverlay').classList.add('show');
 }
 
 // ───────────────────────────────────────────────

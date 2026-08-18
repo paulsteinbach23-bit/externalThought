@@ -1,9 +1,10 @@
-const CACHE = 'memo-v19';
+const CACHE = 'memo-v21';
 const PRECACHE = [
   './index.html',
   './style.css',
   './app.js',
   './sync.js',
+  './canvas.js',
   './config.js',
   './vendor/supabase.js',
   './icon_ET.png',
@@ -48,7 +49,7 @@ self.addEventListener('fetch', e => {
   }
 
   // Network-first for actively-changing app code during development
-  if (url.origin === self.location.origin && (url.pathname.endsWith('/app.js') || url.pathname.endsWith('/sync.js'))) {
+  if (url.origin === self.location.origin && (url.pathname.endsWith('/app.js') || url.pathname.endsWith('/sync.js') || url.pathname.endsWith('/canvas.js'))) {
     e.respondWith(
       fetch(e.request)
         .then(res => {

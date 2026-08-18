@@ -1042,6 +1042,154 @@ mark {
   transform: translateY(-1px);
 }
 
+/* ── CANVAS ENTRY LINK — inside the text editor, below the content ──── */
+.editor-canvas-link {
+  margin-top: 28px;
+  padding-top: 20px;
+  border-top: 1px dashed var(--border);
+}
+.editor-canvas-link button {
+  font-family: var(--mono);
+  font-size: 11px;
+  letter-spacing: 0.1em;
+  padding: 9px 16px;
+  border: 1px solid var(--border);
+  background: var(--surface2);
+  color: var(--text-dim);
+  border-radius: var(--radius-sm);
+  cursor: pointer;
+  transition: background var(--t), border-color var(--t), color var(--t), transform var(--t);
+}
+.editor-canvas-link button:hover {
+  border-color: var(--border-bright);
+  color: var(--text);
+  transform: translateY(-1px);
+}
+
+/* ── CANVAS OVERLAY — separate full-screen view, own overlay (PLAN V2-P6) */
+.canvas-overlay {
+  display: none;
+  position: fixed; inset: 0;
+  background: var(--bg);
+  z-index: 200;
+  flex-direction: column;
+  transition: background var(--t-slow);
+}
+.canvas-overlay.show { display: flex; }
+
+.canvas-nav {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 13px 24px;
+  padding-top: calc(13px + env(safe-area-inset-top));
+  border-bottom: 1px solid var(--border);
+  background: var(--surface);
+  gap: 16px;
+  flex-shrink: 0;
+  transition: background var(--t-slow), border-color var(--t-slow);
+}
+
+.canvas-save-indicator {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-family: var(--mono);
+  font-size: 10px;
+  letter-spacing: 0.08em;
+  color: var(--text-muted);
+  flex-shrink: 0;
+}
+
+.sync-dot.canvas-save-dirty  { background: var(--accent-b); }
+.sync-dot.canvas-save-saving { background: var(--accent-b); animation: sync-pulse 1s ease-in-out infinite; }
+.sync-dot.canvas-save-saved  { background: var(--accent-a); }
+
+.canvas-toolbar {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 9px 24px;
+  border-bottom: 1px solid var(--border);
+  background: var(--surface);
+  flex-shrink: 0;
+  transition: background var(--t-slow), border-color var(--t-slow);
+}
+
+.canvas-viewport {
+  flex: 1;
+  position: relative;
+  overflow: hidden;
+  background: var(--bg);
+  touch-action: none;
+  cursor: grab;
+}
+.canvas-viewport:active { cursor: grabbing; }
+
+.canvas-surface {
+  position: absolute;
+  top: 0; left: 0;
+  width: 0; height: 0; /* children are absolutely positioned — no intrinsic size needed */
+  transform-origin: 0 0;
+  will-change: transform;
+}
+
+.canvas-edges {
+  position: absolute;
+  top: 0; left: 0;
+  overflow: visible;
+  pointer-events: none;
+}
+
+.canvas-node {
+  position: absolute;
+  border-radius: var(--radius-sm);
+  box-shadow: var(--shadow-sm);
+  cursor: grab;
+}
+.canvas-node:active { cursor: grabbing; }
+
+.canvas-node--sticky {
+  background: var(--surface2);
+  border: 1px solid var(--border-bright);
+  padding: 10px;
+  display: flex;
+  flex-direction: column;
+}
+
+.canvas-node-body {
+  flex: 1;
+  overflow-y: auto;
+  font-family: var(--sans);
+  font-size: 13px;
+  line-height: 1.5;
+  color: var(--text);
+  outline: none;
+  cursor: text;
+}
+
+.canvas-node-delete {
+  position: absolute;
+  top: -8px; right: -8px;
+  width: 20px; height: 20px;
+  border-radius: 50%;
+  border: 1px solid var(--border-bright);
+  background: var(--surface3);
+  color: var(--text-dim);
+  font-size: 13px;
+  line-height: 1;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transition: background var(--t), color var(--t);
+}
+.canvas-node-delete:hover {
+  background: var(--accent-rec);
+  color: var(--bg);
+  border-color: var(--accent-rec);
+}
+
 /* ── DETAIL VIEW ─────────────────────── */
 .detail-overlay {
   display: none;

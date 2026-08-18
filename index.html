@@ -137,8 +137,36 @@
     <div class="editor-body">
       <div class="editor-title-input" id="editorTitle" contenteditable="true" placeholder="Titel …"></div>
       <div class="editor-content" id="editorContent" contenteditable="true" placeholder="Inhalt …"></div>
+      <div class="editor-canvas-link" id="editorCanvasLink" style="display:none;">
+        <button onclick="openCanvasView()">// MINDMAP ÖFFNEN →</button>
+      </div>
     </div>
 
+  </div>
+</div>
+
+<!-- CANVAS — freeform mind-map view for an idea document, reached from
+     inside the text editor above. Own top-level overlay, not nested. -->
+<div class="canvas-overlay" id="canvasOverlay">
+  <div class="canvas-nav">
+    <button class="editor-nav-btn" onclick="closeCanvasView()">← Zurück</button>
+    <span class="editor-nav-title" id="canvasNavTitle">// MINDMAP</span>
+    <span class="canvas-save-indicator">
+      <span class="sync-dot" id="canvasSaveDot"></span>
+      <span id="canvasSaveText">Gespeichert</span>
+    </span>
+  </div>
+  <div class="canvas-toolbar">
+    <button class="toolbar-btn toolbar-btn--label" onclick="Canvas.addStickyNode()">+ Notiz</button>
+    <div class="toolbar-spacer"></div>
+    <button class="toolbar-btn" onclick="Canvas.zoomOut()" aria-label="Verkleinern">−</button>
+    <button class="toolbar-btn toolbar-btn--label" onclick="Canvas.zoomReset()">100%</button>
+    <button class="toolbar-btn" onclick="Canvas.zoomIn()" aria-label="Vergrößern">+</button>
+  </div>
+  <div class="canvas-viewport" id="canvasViewport">
+    <div class="canvas-surface" id="canvasSurface">
+      <svg class="canvas-edges" id="canvasEdges"></svg>
+    </div>
   </div>
 </div>
 
@@ -206,6 +234,7 @@
 <script src="config.js"></script>
 <script src="vendor/supabase.js"></script>
 <script src="sync.js"></script>
+<script src="canvas.js"></script>
 <script src="app.js"></script>
 <script>
   if ('serviceWorker' in navigator) {
