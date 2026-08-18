@@ -36,7 +36,10 @@ if (!localStorage.getItem('memo_schema_v2')) {
 let memos = JSON.parse(localStorage.getItem('voice_memos') || '[]');
 let captures = JSON.parse(localStorage.getItem('captures') || '[]');
 let ideaDocuments = JSON.parse(localStorage.getItem('idea_documents') || '[]');
-let currentView = 'memos'; // 'memos' | 'todos' | 'inbox' | 'docs'
+// 'memos' (legacy voice_memos, no tab points here anymore — kept reachable
+// as a read-only safety net, see CLAUDE.md) | 'todos' | 'inbox' (labeled
+// "NOTIZEN" in the UI) | 'docs'
+let currentView = 'todos';
 let sortOrder = 'newest';
 let editorId = null;
 let editorMode = 'memo'; // 'memo' | 'idea' — which collection saveEditor()/closeEditor() act on

@@ -35,9 +35,8 @@
   <main class="main">
     <div class="main-header">
       <div class="view-tabs" id="viewTabs">
-        <button class="view-tab active" data-view="memos" onclick="setView('memos')">NOTIZEN</button>
-        <button class="view-tab" data-view="todos" onclick="setView('todos')">TO-DO</button>
-        <button class="view-tab" data-view="inbox" onclick="setView('inbox')">IDEEN</button>
+        <button class="view-tab active" data-view="todos" onclick="setView('todos')">TO-DO</button>
+        <button class="view-tab" data-view="inbox" onclick="setView('inbox')">NOTIZEN</button>
         <button class="view-tab" data-view="docs" onclick="setView('docs')">DOKUMENTE</button>
       </div>
       <div class="search-row">
@@ -210,6 +209,17 @@
 <script>
   if ('serviceWorker' in navigator) {
     navigator.serviceWorker.register('./sw.js').catch(() => {});
+    // sw.js calls skipWaiting()+clients.claim() on every update, but that
+    // alone doesn't refresh an already-open tab/PWA instance — it only
+    // controls the *next* navigation. Without this listener, a page left
+    // open (very common for a home-screen PWA) silently keeps running old
+    // HTML/JS indefinitely, even though the new version deployed fine.
+    let refreshedOnce = false;
+    navigator.serviceWorker.addEventListener('controllerchange', () => {
+      if (refreshedOnce) return;
+      refreshedOnce = true;
+      location.reload();
+    });
   }
 </script>
 </body>
