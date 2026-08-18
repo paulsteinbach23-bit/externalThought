@@ -909,6 +909,7 @@ mark {
   transform: translateY(-1px);
 }
 .toolbar-btn--label { font-size: 10px; letter-spacing: 0.06em; }
+.toolbar-btn.danger:hover { border-color: var(--accent-rec); color: var(--accent-rec); }
 
 .toolbar-divider {
   width: 1px; height: 20px;

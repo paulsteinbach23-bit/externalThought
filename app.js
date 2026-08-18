@@ -831,6 +831,7 @@ function openEditor(id, event) {
   editorId = id;
   editorMode = 'memo';
   document.getElementById('editorNavTitle').textContent = '// MEMO BEARBEITEN';
+  document.getElementById('editorDeleteBtn').style.display = 'none';
 
   // Title
   document.getElementById('editorTitle').textContent = memo.title;
@@ -943,6 +944,7 @@ function openIdeaEditor(id) {
   editorId = id;
   editorMode = 'idea';
   document.getElementById('editorNavTitle').textContent = '// DOKUMENT BEARBEITEN';
+  document.getElementById('editorDeleteBtn').style.display = '';
 
   document.getElementById('editorTitle').textContent = doc.title;
 
@@ -964,6 +966,26 @@ function openIdeaEditor(id) {
     `Dokument: ${doc.title}\nErstellt: ${dateStr}\n\nInhalt:\n${stripHtml(doc.html)}\n\n---\nMeine Frage / Aufgabe an dich:\n`;
 
   document.getElementById('editorOverlay').classList.add('show');
+}
+
+function deleteIdeaDocument(id) {
+  if (!confirm('Dokument löschen?')) return;
+  // No server-side cascade on a soft delete — clear filed/ideaDocumentId on
+  // any captures pointing here, or they'd be stranded: filed stays true
+  // forever, pointing at a document that no longer resolves, and they'd
+  // never reappear in the inbox.
+  captures.filter(c => c.ideaDocumentId === id).forEach(c => {
+    c.filed = false;
+    c.ideaDocumentId = null;
+    c.updatedAt = Date.now();
+    if (typeof Sync !== 'undefined') Sync.upsert(c, 'captures');
+  });
+  saveCaptures();
+  ideaDocuments = ideaDocuments.filter(d => d.id !== id);
+  saveIdeaDocuments();
+  if (typeof Sync !== 'undefined') Sync.softDelete(id, 'idea_documents');
+  closeEditor();
+  renderEntries();
 }
 
 // ───────────────────────────────────────────────
