@@ -33,7 +33,7 @@ const Sync = (() => {
     localStorage.setItem(OUTBOX_KEY, JSON.stringify(items));
   }
 
-  const STATUS_LABELS = { online: 'SYNC OK', offline: 'OFFLINE', syncing: 'SYNC …' };
+  const STATUS_LABELS = { online: 'Synchron', offline: 'Offline', syncing: 'Synchronisiere …' };
 
   function setStatus(s) {
     status = s;

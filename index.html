@@ -3,14 +3,14 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
-<title>MEMO — Voice Library</title>
+<title>SecondBrain</title>
 
 <!-- PWA -->
 <link rel="manifest" href="manifest.json">
-<meta name="theme-color" id="themeColorMeta" content="#f3ede1">
+<meta name="theme-color" id="themeColorMeta" content="#f6f5f3">
 <meta name="apple-mobile-web-app-capable" content="yes">
 <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
-<meta name="apple-mobile-web-app-title" content="MEMO">
+<meta name="apple-mobile-web-app-title" content="SecondBrain">
 <link rel="apple-touch-icon" href="icon_ET.png">
 
 <link href="https://fonts.googleapis.com/css2?family=Source+Serif+4:ital,wght@0,400;0,500;0,600;0,700;1,400;1,600&family=Courier+Prime:wght@400;700&display=swap" rel="stylesheet">
@@ -18,80 +18,103 @@
 </head>
 <body>
 
-<header>
-  <div class="header-left">
-    <div class="logo">MEMO<span>://</span>LIBRARY</div>
-  </div>
-  <div class="header-right">
-    <button class="theme-toggle" onclick="toggleTheme()" aria-label="Theme wechseln">
-      <span class="toggle-track"><span class="toggle-thumb"></span></span>
-    </button>
-    <button class="sort-toggle" id="logoutBtn" onclick="logout()" style="display:none;">ABMELDEN</button>
-  </div>
-</header>
+<div class="shell">
 
-<div class="app">
-  <!-- MAIN -->
-  <main class="main">
-    <div class="main-header">
-      <div class="view-tabs" id="viewTabs">
-        <button class="view-tab active" data-view="todos" onclick="setView('todos')">TO-DO</button>
-        <button class="view-tab" data-view="inbox" onclick="setView('inbox')">NOTIZEN</button>
-        <button class="view-tab" data-view="docs" onclick="setView('docs')">DOKUMENTE</button>
-      </div>
-      <div class="search-row">
-        <input class="search-box" type="text" placeholder="Suchen …" oninput="renderEntries()" id="searchInput">
-        <button class="sort-toggle" id="sortToggle" onclick="toggleSort()">↓ NEU</button>
-        <button class="sort-toggle" id="newDocBtn" onclick="createIdeaDocument()" style="display:none;">+ NEU</button>
-      </div>
-    </div>
-
-    <div class="entries" id="entries"></div>
-
-    <div class="status-bar">
-      <div>GESAMT <span id="stat-total">0</span></div>
-      <div class="sync-indicator" id="syncIndicator" style="margin-left:auto;">
+  <header class="topbar">
+    <div class="logo">SecondBrain</div>
+    <div class="topbar-right">
+      <div class="sync-indicator" id="syncIndicator">
         <span class="sync-dot" id="syncDot"></span>
         <span id="syncStatusText">–</span>
       </div>
+      <button class="icon-btn" onclick="toggleTheme()" aria-label="Hell/Dunkel wechseln">
+        <svg aria-hidden="true" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 12.8A9 9 0 1 1 11.2 3a7 7 0 0 0 9.8 9.8z"></path></svg>
+      </button>
+      <button class="icon-btn" id="logoutBtn" onclick="logout()" style="display:none;" aria-label="Abmelden">
+        <svg aria-hidden="true" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4"></path><polyline points="16 17 21 12 16 7"></polyline><line x1="21" y1="12" x2="9" y2="12"></line></svg>
+      </button>
     </div>
-  </main>
+  </header>
+
+  <div class="title-row">
+    <h1 class="view-title" id="viewTitle">To-do</h1>
+    <div class="view-subtitle" id="viewSubtitle"></div>
+  </div>
+
+  <nav class="segmented" id="viewTabs" aria-label="Ansicht">
+    <button class="view-tab active" data-view="todos" onclick="setView('todos')">TO-DO<span class="tab-count" id="countTodos"></span></button>
+    <button class="view-tab" data-view="inbox" onclick="setView('inbox')">NOTIZEN<span class="tab-count" id="countInbox"></span></button>
+    <button class="view-tab" data-view="docs" onclick="setView('docs')">DOKS<span class="tab-count" id="countDocs"></span></button>
+  </nav>
+
+  <div class="search-row">
+    <label class="search-field">
+      <svg aria-hidden="true" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="11" cy="11" r="7"></circle><line x1="21" y1="21" x2="16.65" y2="16.65"></line></svg>
+      <input class="search-box" type="search" placeholder="Suchen …" aria-label="Suchen" oninput="renderEntries()" id="searchInput">
+    </label>
+    <button class="icon-btn icon-btn--boxed" id="sortToggle" onclick="toggleSort()" aria-label="Sortierung: neueste zuerst">
+      <svg aria-hidden="true" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M7 4v16"></path><path d="M3 16l4 4 4-4"></path><path d="M14 6h7"></path><path d="M14 12h5"></path><path d="M14 18h3"></path></svg>
+    </button>
+    <button class="icon-btn icon-btn--boxed" id="newDocBtn" onclick="createIdeaDocument()" style="display:none;" aria-label="Neues Dokument">
+      <svg aria-hidden="true" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="12" y1="5" x2="12" y2="19"></line><line x1="5" y1="12" x2="19" y2="12"></line></svg>
+    </button>
+  </div>
+
+  <main class="entries" id="entries"></main>
+  <span id="stat-total" hidden></span>
+
+  <div class="orb-bar">
+    <button class="orb" id="fab" onclick="onFabClick()" aria-label="Aufnahme starten">
+      <span class="orb-blob orb-blob--1" aria-hidden="true"></span>
+      <span class="orb-blob orb-blob--2" aria-hidden="true"></span>
+      <span class="orb-blob orb-blob--3" aria-hidden="true"></span>
+      <span class="orb-blob orb-blob--4" aria-hidden="true"></span>
+      <span class="orb-shine" aria-hidden="true"></span>
+    </button>
+  </div>
 </div>
 
-<!-- Floating Action Button -->
-<button class="fab" id="fab" onclick="onFabClick()" aria-label="Aufnahme">
-  <svg id="fabIcon" xmlns="http://www.w3.org/2000/svg" width="26" height="26" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-    <path d="M12 1a3 3 0 0 0-3 3v8a3 3 0 0 0 6 0V4a3 3 0 0 0-3-3z"/>
-    <path d="M19 10v2a7 7 0 0 1-14 0v-2"/>
-    <line x1="12" y1="19" x2="12" y2="23"/>
-    <line x1="8" y1="23" x2="16" y2="23"/>
-  </svg>
-  <svg id="fabStopIcon" xmlns="http://www.w3.org/2000/svg" width="22" height="22" viewBox="0 0 24 24" fill="currentColor" stroke="none" style="display:none">
-    <rect x="4" y="4" width="16" height="16" rx="3"/>
-  </svg>
-</button>
-
-<!-- RECORDING MODAL -->
-<div class="modal-overlay" id="modalOverlay">
-  <div class="modal">
-    <h2 id="modalTitle">// AUFNAHME LÄUFT</h2>
-    <div class="modal-status" id="modalStatus">
-      <div style="display:flex; align-items:center; gap:12px;">
-        <div class="waveform">
-          <div class="wave-bar"></div><div class="wave-bar"></div><div class="wave-bar"></div>
-          <div class="wave-bar"></div><div class="wave-bar"></div><div class="wave-bar"></div>
-          <div class="wave-bar"></div><div class="wave-bar"></div>
-        </div>
-        <span style="color:var(--accent-rec); font-size:11px; font-family:var(--mono);">Zuhören …</span>
-      </div>
+<!-- RECORDING — full screen, big orb + live transcript, then review step -->
+<div class="record-overlay" id="modalOverlay">
+  <div class="record-screen">
+    <div class="record-top">
+      <div class="logo">SecondBrain</div>
+      <div class="record-lang">DE · LIVE</div>
     </div>
-    <textarea class="modal-review-textarea" id="reviewTextarea" style="display:none" placeholder="Erkannter Text — hier bearbeiten …"></textarea>
-    <button class="record-btn recording" id="modalStopBtn" onclick="stopRecording()" style="width:100%; margin-top:4px;">
-      <span class="rec-indicator"></span> Aufnahme stoppen
-    </button>
-    <button class="record-btn" id="modalConfirmBtn" onclick="confirmAndProcess()" style="display:none; width:100%; margin-top:4px; border-color:var(--accent-a); color:var(--accent-a);">
-      Speichern →
-    </button>
+
+    <div class="record-head">
+      <div class="record-timer" id="recordTimer">00:00</div>
+      <div class="record-status" id="modalTitle"><span class="record-status-dot"></span>AUFNAHME LÄUFT</div>
+    </div>
+
+    <div class="big-orb-wrap">
+      <button class="big-orb" id="bigOrb" onclick="stopRecording()" aria-label="Aufnahme stoppen">
+        <span class="big-orb-glow" aria-hidden="true"></span>
+        <span class="big-orb-body" aria-hidden="true">
+          <span class="swirl swirl--a"><span class="blob blob--1"></span><span class="blob blob--2"></span></span>
+          <span class="swirl swirl--b"><span class="blob blob--3"></span><span class="blob blob--4"></span></span>
+          <span class="swirl swirl--c"><span class="blob blob--5"></span></span>
+          <span class="big-orb-shine"></span>
+        </span>
+      </button>
+    </div>
+
+    <div class="transcript-card">
+      <div class="transcript-head">
+        <span class="transcript-label">LIVE-TRANSKRIPT</span>
+        <span class="kind-badge" id="kindBadge">ERKANNT: NOTIZ</span>
+      </div>
+      <div class="modal-status" id="modalStatus"><p class="transcript-text" id="liveText"><span class="transcript-hint">Sprich los – beginne mit „To-do“ oder „Aufgabe“ für eine Aufgabe.</span><span class="caret"></span></p></div>
+      <textarea class="modal-review-textarea" id="reviewTextarea" style="display:none" placeholder="Erkannter Text – hier bearbeiten …"></textarea>
+    </div>
+
+    <div class="record-actions">
+      <button class="pill-btn pill-btn--rec" id="modalStopBtn" onclick="stopRecording()">
+        <span class="stop-square" aria-hidden="true"></span>STOPPEN
+      </button>
+      <button class="pill-btn pill-btn--primary" id="modalConfirmBtn" onclick="confirmAndProcess()" style="display:none;">SPEICHERN</button>
+      <button class="pill-btn" id="modalCancelBtn" onclick="cancelRecording()">VERWERFEN</button>
+    </div>
   </div>
 </div>
 
@@ -185,23 +208,41 @@
 <div class="detail-overlay" id="detailOverlay">
   <div class="detail-container">
     <div class="detail-nav">
-      <button class="editor-nav-btn" onclick="navigateBack()">← Zurück</button>
-      <span class="detail-nav-path entry-path-tag" id="detailNavPath"></span>
+      <button class="back-link" onclick="navigateBack()">
+        <svg aria-hidden="true" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="15 6 9 12 15 18"></polyline></svg>
+        <span id="detailBackLabel">ZURÜCK</span>
+      </button>
+      <button class="icon-btn" id="detailMenuBtn" onclick="toggleDetailMenu()" aria-label="Weitere Aktionen" aria-expanded="false">
+        <svg aria-hidden="true" width="20" height="20" viewBox="0 0 24 24" fill="currentColor" stroke="none"><circle cx="5" cy="12" r="1.8"></circle><circle cx="12" cy="12" r="1.8"></circle><circle cx="19" cy="12" r="1.8"></circle></svg>
+      </button>
+      <div class="detail-menu" id="detailMenu" hidden>
+        <button id="detailFileBtn" style="display:none;">
+          <svg aria-hidden="true" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 7h18"></path><path d="M3 12h12"></path><path d="M3 17h8"></path><path d="M17 15l3 3-3 3"></path></svg>In Dokument einordnen
+        </button>
+        <button id="detailDownloadBtn">
+          <svg aria-hidden="true" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3v12"></path><polyline points="7 10 12 15 17 10"></polyline><path d="M5 21h14"></path></svg>Herunterladen
+        </button>
+        <div class="detail-menu-sep"></div>
+        <button class="danger" id="detailDeleteBtn">
+          <svg aria-hidden="true" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="3 6 5 6 21 6"></polyline><path d="M19 6l-1 14a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2L5 6"></path></svg>Löschen
+        </button>
+      </div>
     </div>
     <div class="detail-body">
-      <div class="detail-timestamp" id="detailTimestamp"></div>
+      <div class="detail-meta"><span class="detail-tag" id="detailNavPath"></span><span id="detailTimestamp"></span></div>
       <div class="detail-title-row">
-        <button class="memo-checkbox" id="detailCheckbox" style="display:none;" aria-label="Erledigt"></button>
-        <div class="detail-title" id="detailTitle"></div>
+        <button class="memo-checkbox memo-checkbox--lg" id="detailCheckbox" style="display:none;" aria-label="Als erledigt markieren"></button>
+        <h1 class="detail-title" id="detailTitle"></h1>
       </div>
       <div class="detail-text" id="detailText"></div>
     </div>
     <div class="detail-actions">
-      <button class="btn-small" id="detailEditBtn">BEARBEITEN</button>
-      <button class="btn-small" id="detailFileBtn" style="display:none;">EINORDNEN</button>
-      <button class="btn-small" id="detailCopyBtn">KOPIEREN</button>
-      <button class="btn-small" id="detailDownloadBtn">DOWNLOAD</button>
-      <button class="btn-small danger" id="detailDeleteBtn">LÖSCHEN</button>
+      <button class="pill-btn pill-btn--wide" id="detailEditBtn">
+        <svg aria-hidden="true" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 20h9"></path><path d="M16.5 3.5a2.1 2.1 0 0 1 3 3L7 19l-4 1 1-4z"></path></svg>BEARBEITEN
+      </button>
+      <button class="icon-btn icon-btn--boxed" id="detailCopyBtn" aria-label="Text kopieren">
+        <svg aria-hidden="true" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="9" y="9" width="12" height="12" rx="2"></rect><path d="M5 15H4a1 1 0 0 1-1-1V4a1 1 0 0 1 1-1h10a1 1 0 0 1 1 1v1"></path></svg>
+      </button>
     </div>
   </div>
 </div>
@@ -209,11 +250,11 @@
 <!-- LOGIN — Supabase Auth (email + password), gates sync when config.js is present -->
 <div class="modal-overlay" id="loginOverlay">
   <div class="modal">
-    <h2>// ANMELDEN</h2>
+    <div class="logo" style="margin-bottom:4px">SecondBrain</div><h2>Anmelden</h2>
     <form id="loginForm" onsubmit="login(event)" style="display:flex; flex-direction:column; gap:12px;">
       <input class="merge-input" id="loginEmail" type="email" placeholder="deine@email.de" required autocomplete="email">
       <input class="merge-input" id="loginPassword" type="password" placeholder="Passwort" required autocomplete="current-password">
-      <button class="record-btn" id="loginSubmitBtn" style="border-color:var(--accent-a); color:var(--accent-a);" type="submit">Anmelden →</button>
+      <button class="record-btn" id="loginSubmitBtn" style="border-color:var(--accent-a); color:var(--accent-a);" type="submit">ANMELDEN</button>
     </form>
     <div id="loginStatus" style="font-family:var(--mono); font-size:10px; color:var(--text-muted); min-height:14px;"></div>
   </div>

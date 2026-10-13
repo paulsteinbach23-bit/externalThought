@@ -1,15 +1,18 @@
 {
-  "name": "MEMO — Voice Library",
-  "short_name": "MEMO",
-  "description": "Sprachmemo-Recorder und Bibliothek",
+  "name": "SecondBrain",
+  "short_name": "SecondBrain",
+  "description": "Gedanken, To-dos und Notizen per Stimme",
   "start_url": "./index.html",
   "scope": "./",
   "display": "standalone",
   "orientation": "any",
-  "background_color": "#0c1a0e",
-  "theme_color": "#0c1a0e",
+  "background_color": "#f6f5f3",
+  "theme_color": "#f6f5f3",
   "lang": "de",
-  "categories": ["productivity", "utilities"],
+  "categories": [
+    "productivity",
+    "utilities"
+  ],
   "icons": [
     {
       "src": "icon_ET.png",

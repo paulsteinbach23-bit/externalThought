@@ -94,3 +94,14 @@ A one-time client-side migration (`migrateLegacyMemosToCaptures()`) copies every
 Note `toggleMemoDone()` (used by the legacy memos view's checkbox on path-E items) still writes to `voice_memos.done` — a real, if narrow, exception to "voice_memos is read-only." Since the migrated capture counterpart is a separate row, toggling done from that view and the TO-DO tab are two independent writes to two different tables that can drift from each other. Not fixed as of V2-P5 — flagged as a known follow-up. This view has no tab pointing to it anymore (see the `app.js` architecture note above), so this only matters if it's ever re-exposed or reached via a stray `#memo/<id>` hash link.
 
 `getPathName()`/`getPathColor()`/`pathTagHtml()`/`applyPathTagStyle()` in `app.js` still exist, scoped explicitly to rendering legacy memos' path tags in the entries list, detail view, and editor. The old per-category CSS (`.tag-a`–`.tag-d`, sidebar, category tabs, path-picker/new-path modals, `customPaths[]`) was removed in V2-P3; `.tag-e` and the `--accent-a`–`--accent-d` variables were deliberately kept — the variables are woven into unrelated UI (sync indicator, theme toggle, spinner, editor save button) and `.tag-e`/`--accent-rec` still drive the to-do accent color. Legacy `A`–`D` tags now render without their old per-category hue (monochrome, inherited text color) since their dedicated CSS is gone — an intentional, cosmetic-only degradation for a model being retired.
+
+### Redesign „SecondBrain“ (2026-10)
+
+UI nach dem Claude-Design-Canvas „ExternalThought – Redesign“ (Zeile „Vorschlag“): hell = Farbwelt „Kreide“,
+dunkel = „Glut“; Tokens in `:root`/`[data-theme="dark"]` von `style.css`, alte Variablennamen (`--text-dim`,
+`--accent-rec`, …) sind Aliase, damit Editor/Canvas/Modals unverändert funktionieren. Die Liste rendert
+To-dos in „Offen“/„Erledigt“, Tabs zeigen Zähler (`updateChrome()`), die rote Kugel (`#fab`) ersetzt den
+FAB, Aufnahme ist ein Vollbild (`#modalOverlay` mit Zuständen `is-review`/`is-busy`, Timer, Live-Transkript,
+`cancelRecording()`), Detail hat ein ⋯-Menü (`toggleDetailMenu()`). Fälligkeiten (`due_date`, z. B. vom
+Telegram-Bot) erscheinen als HEUTE/MORGEN/ÜBERFÄLLIG; `source: 'telegram'` wird als TELEGRAM angezeigt.
+`logout()` warnt, dass `signOut()` alle Sitzungen beendet – auch die des Trawesko-Bots.

@@ -1,7 +1,7 @@
 // ───────────────────────────────────────────────
 // THEME
 // ───────────────────────────────────────────────
-const THEME_COLORS = { dark: '#17140f', light: '#f3ede1' };
+const THEME_COLORS = { dark: '#140c0e', light: '#f6f5f3' };
 
 function applyTheme(theme) {
   document.documentElement.setAttribute('data-theme', theme);
@@ -120,6 +120,27 @@ function renderEntries() {
   else if (currentView === 'inbox') renderInboxList(search);
   else if (currentView === 'docs') renderDocsList(search);
   else renderMemosList(search);
+  updateChrome();
+}
+
+// Titel, Untertitel und Zähler in den Tabs (Redesign „SecondBrain“)
+function updateChrome() {
+  const todos = captures.filter(c => c.kind === 'todo');
+  const open = todos.filter(c => !c.done).length;
+  const inbox = captures.filter(c => c.kind === 'idea' && !c.filed).length;
+  const set = (id, v) => { const el = document.getElementById(id); if (el) el.textContent = v; };
+  set('countTodos', open);
+  set('countInbox', inbox);
+  set('countDocs', ideaDocuments.length);
+  const titles = { todos: 'To-do', inbox: 'Notizen', docs: 'Dokumente', memos: 'Archiv' };
+  const subs = {
+    todos: `${open} offen · ${todos.length - open} erledigt`,
+    inbox: `${inbox} unsortiert`,
+    docs: `${ideaDocuments.length} Dokument${ideaDocuments.length === 1 ? '' : 'e'}`,
+    memos: `${memos.length} Memos`,
+  };
+  set('viewTitle', titles[currentView] || '');
+  set('viewSubtitle', subs[currentView] || '');
 }
 
 function setView(view) {
@@ -133,10 +154,52 @@ function setView(view) {
 function emptyStateHtml(label, hint) {
   return `
     <div class="empty-state">
-      <div class="icon">◎</div>
-      <p>${label}</p>
-      <p style="font-size:10px; opacity:0.5;">${hint}</p>
+      <div class="empty-title">${label}</div>
+      <div class="empty-hint">${hint}</div>
     </div>`;
+}
+
+// ── Zeit- und Herkunftsangaben ──
+function startOfDay(d) { return new Date(d.getFullYear(), d.getMonth(), d.getDate()).getTime(); }
+
+function relTime(ts) {
+  const d = new Date(ts);
+  const today = startOfDay(new Date());
+  const day = startOfDay(d);
+  if (day === today) return d.toLocaleTimeString('de-DE', { hour: '2-digit', minute: '2-digit' });
+  if (day === today - 86400000) return 'Gestern';
+  if (day > today - 6 * 86400000) return d.toLocaleDateString('de-DE', { weekday: 'short' }).replace('.', '');
+  return d.toLocaleDateString('de-DE', { day: 'numeric', month: 'short' });
+}
+
+function relDay(ts) {
+  const d = new Date(ts);
+  const today = startOfDay(new Date());
+  const day = startOfDay(d);
+  if (day === today) return 'Heute';
+  if (day === today - 86400000) return 'Gestern';
+  return d.toLocaleDateString('de-DE', { weekday: 'long', day: 'numeric', month: 'long' });
+}
+
+function srcLabel(c) {
+  if (c.source === 'telegram') return 'TELEGRAM';
+  if (c.source === 'mac') return 'MAC';
+  return 'STIMME';
+}
+
+// Fälligkeit (due_date, z. B. vom Telegram-Bot gesetzt) als kurze Angabe
+function dueInfo(dueDate) {
+  if (!dueDate) return null;
+  const [y, m, dd] = String(dueDate).split('-').map(Number);
+  const due = new Date(y, m - 1, dd).getTime();
+  const today = startOfDay(new Date());
+  const days = Math.round((due - today) / 86400000);
+  if (days < 0) return { label: 'ÜBERFÄLLIG', urgent: true };
+  if (days === 0) return { label: 'HEUTE', urgent: true };
+  if (days === 1) return { label: 'MORGEN', urgent: false };
+  const d = new Date(due);
+  const wd = d.toLocaleDateString('de-DE', { weekday: 'short' }).replace('.', '').toUpperCase();
+  return { label: `${wd} ${d.getDate()}.${d.getMonth() + 1}.`, urgent: false };
 }
 
 function stripHtml(html) {
@@ -219,46 +282,48 @@ function renderTodosList(search) {
   items.sort((a,b) => sortOrder === 'newest' ? b.ts - a.ts : a.ts - b.ts);
 
   if (items.length === 0) {
-    container.innerHTML = emptyStateHtml('NO TO-DOS FOUND', 'Sag "Aufgabe …" oder "Todo …" beim Aufnehmen →');
+    container.innerHTML = emptyStateHtml(search ? 'NICHTS GEFUNDEN' : 'KEINE TO-DOS', search ? 'Andere Suchbegriffe probieren.' : 'Tippe auf die Kugel und sag „To-do …“.');
     return;
   }
 
-  // Group: Heute / Diese Woche / Älter
-  const now = new Date();
-  const startOfToday = new Date(now.getFullYear(), now.getMonth(), now.getDate()).getTime();
-  const startOfWeek = startOfToday - 6 * 86400000;
-  const groups = { 'HEUTE': [], 'DIESE WOCHE': [], 'ÄLTER': [] };
-  items.forEach(c => {
-    if (c.ts >= startOfToday) groups['HEUTE'].push(c);
-    else if (c.ts >= startOfWeek) groups['DIESE WOCHE'].push(c);
-    else groups['ÄLTER'].push(c);
-  });
+  const open = items.filter(c => !c.done);
+  const done = items.filter(c => c.done);
+  const checkSvg = '<svg aria-hidden="true" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"></polyline></svg>';
 
   let html = '';
-  for (const [label, group] of Object.entries(groups)) {
-    if (!group.length) continue;
-    html += `<div class="date-group-label">${label}</div>`;
-    group.forEach(c => {
-      const time = new Date(c.ts).toLocaleTimeString('en-GB', {hour:'2-digit', minute:'2-digit'});
+  if (open.length) {
+    html += '<div class="section-label">OFFEN</div>';
+    open.forEach(c => {
       const title = c.title || c.transcript.slice(0, 60);
-      const isDone = !!c.done;
+      const due = dueInfo(c.dueDate);
+      const preview = c.transcript && c.transcript !== title ? c.transcript : '';
       html += `
-        <div class="entry-card${isDone?' is-done':''}" onclick="navigateToCaptureDetail('${c.id}')">
-          <div>
-            <div class="entry-title-row">
-              <button class="memo-checkbox${isDone?' checked':''}" onclick="toggleCaptureDone('${c.id}', event)" aria-label="Erledigt"></button>
-              <div class="entry-title">${highlight(title, search)}</div>
-            </div>
-            <div class="entry-preview">${highlight(c.transcript.substring(0,140), search)}${c.transcript.length>140?'…':''}</div>
-          </div>
-          <div class="entry-meta">
-            ${time}
-            <span class="source-badge">${c.source === 'pwa' ? 'PWA' : 'MAC'}</span>
-          </div>
+        <div class="todo-row">
+          <button class="check-hit" onclick="toggleCaptureDone('${c.id}', event)" aria-label="Als erledigt markieren"><span class="check-box"></span></button>
+          <button class="row-link" onclick="navigateToCaptureDetail('${c.id}')">
+            <span class="row-main">
+              <span class="row-title">${highlight(title, search)}</span>
+              ${preview ? `<span class="row-preview">${highlight(preview.substring(0, 140), search)}</span>` : ''}
+            </span>
+            <span class="row-meta">${due ? `<span class="row-due${due.urgent ? '' : ' is-soon'}">${due.label}</span>` : relTime(c.ts)}<span class="row-src">${srcLabel(c)}</span></span>
+          </button>
         </div>`;
     });
   }
-
+  if (done.length) {
+    html += `<div class="section-label${open.length ? ' section-label--spaced' : ''}">ERLEDIGT</div>`;
+    done.forEach(c => {
+      const title = c.title || c.transcript.slice(0, 60);
+      html += `
+        <div class="todo-row is-done">
+          <button class="check-hit" onclick="toggleCaptureDone('${c.id}', event)" aria-label="Wieder öffnen"><span class="check-box">${checkSvg}</span></button>
+          <button class="row-link" onclick="navigateToCaptureDetail('${c.id}')">
+            <span class="row-main"><span class="row-title">${highlight(title, search)}</span></span>
+            <span class="row-meta">${relTime(c.updatedAt || c.ts)}</span>
+          </button>
+        </div>`;
+    });
+  }
   container.innerHTML = html;
 }
 
@@ -275,40 +340,21 @@ function renderInboxList(search) {
   items.sort((a,b) => sortOrder === 'newest' ? b.ts - a.ts : a.ts - b.ts);
 
   if (items.length === 0) {
-    container.innerHTML = emptyStateHtml('INBOX LEER', 'Unbearbeitete Ideen landen hier →');
+    container.innerHTML = emptyStateHtml(search ? 'NICHTS GEFUNDEN' : 'KEINE NOTIZEN', search ? 'Andere Suchbegriffe probieren.' : 'Unsortierte Ideen landen hier.');
     return;
   }
 
-  const groups = {};
+  let html = '<div class="note-list">';
   items.forEach(c => {
-    const key = dateGroupKey(c.ts);
-    if (!groups[key]) groups[key] = [];
-    groups[key].push(c);
+    const title = c.title || c.transcript.slice(0, 60);
+    html += `
+      <button class="note-card" onclick="navigateToCaptureDetail('${c.id}')">
+        <span class="note-head"><span class="note-tag">IDEE</span>${relTime(c.ts)}</span>
+        <span class="note-title">${highlight(title, search)}</span>
+        <span class="note-preview">${highlight(c.transcript.substring(0, 220), search)}</span>
+      </button>`;
   });
-
-  let html = '';
-  for (const [date, group] of Object.entries(groups)) {
-    html += `<div class="date-group-label">${date}</div>`;
-    group.forEach(c => {
-      const time = new Date(c.ts).toLocaleTimeString('en-GB', {hour:'2-digit', minute:'2-digit'});
-      const title = c.title || c.transcript.slice(0, 60);
-      html += `
-        <div class="entry-card" onclick="navigateToCaptureDetail('${c.id}')">
-          <div>
-            <div class="entry-title-row">
-              <div class="entry-title">${highlight(title, search)}</div>
-            </div>
-            <div class="entry-preview">${highlight(c.transcript.substring(0,140), search)}${c.transcript.length>140?'…':''}</div>
-          </div>
-          <div class="entry-meta">
-            ${time}
-            <span class="source-badge">${c.source === 'pwa' ? 'PWA' : 'MAC'}</span>
-          </div>
-        </div>`;
-    });
-  }
-
-  container.innerHTML = html;
+  container.innerHTML = html + '</div>';
 }
 
 function renderDocsList(search) {
@@ -323,38 +369,25 @@ function renderDocsList(search) {
   items.sort((a,b) => sortOrder === 'newest' ? b.updatedAt - a.updatedAt : a.updatedAt - b.updatedAt);
 
   if (items.length === 0) {
-    container.innerHTML = emptyStateHtml('NOCH KEINE DOKUMENTE', '„+ NEU" erstellt dein erstes Ideen-Dokument →');
+    container.innerHTML = emptyStateHtml(search ? 'NICHTS GEFUNDEN' : 'NOCH KEINE DOKUMENTE', search ? 'Andere Suchbegriffe probieren.' : '„+“ oben rechts erstellt dein erstes Dokument.');
     return;
   }
 
-  const groups = {};
-  items.forEach(d => {
-    const key = dateGroupKey(d.updatedAt);
-    if (!groups[key]) groups[key] = [];
-    groups[key].push(d);
-  });
-
+  const docSvg = '<svg aria-hidden="true" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M14 3H7a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2V8z"></path><polyline points="14 3 14 8 19 8"></polyline><line x1="9" y1="13" x2="15" y2="13"></line><line x1="9" y1="17" x2="13" y2="17"></line></svg>';
+  const chevron = '<svg class="doc-chevron" aria-hidden="true" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="9 6 15 12 9 18"></polyline></svg>';
   let html = '';
-  for (const [date, group] of Object.entries(groups)) {
-    html += `<div class="date-group-label">${date}</div>`;
-    group.forEach(d => {
-      const time = new Date(d.updatedAt).toLocaleTimeString('en-GB', {hour:'2-digit', minute:'2-digit'});
-      const preview = stripHtml(d.html);
-      html += `
-        <div class="entry-card" onclick="openIdeaEditor('${d.id}')">
-          <div>
-            <div class="entry-title-row">
-              <div class="entry-title">${highlight(d.title, search)}</div>
-            </div>
-            <div class="entry-preview">${highlight(preview.substring(0,140), search)}${preview.length>140?'…':''}</div>
-          </div>
-          <div class="entry-meta">
-            ${time}
-          </div>
-        </div>`;
-    });
-  }
-
+  items.forEach(d => {
+    const n = captures.filter(c => c.ideaDocumentId === d.id).length;
+    html += `
+      <button class="doc-row" onclick="openIdeaEditor('${d.id}')">
+        <span class="doc-icon">${docSvg}</span>
+        <span class="doc-main">
+          <span class="doc-title">${highlight(d.title, search)}</span>
+          <span class="doc-meta">${n} Notiz${n === 1 ? '' : 'en'} · ${relTime(d.updatedAt)}</span>
+        </span>
+        ${chevron}
+      </button>`;
+  });
   container.innerHTML = html;
 }
 
@@ -373,7 +406,9 @@ function highlight(text, query) {
 
 function toggleSort() {
   sortOrder = sortOrder === 'newest' ? 'oldest' : 'newest';
-  document.getElementById('sortToggle').textContent = sortOrder === 'newest' ? '↓ NEU' : '↑ ALT';
+  const btn = document.getElementById('sortToggle');
+  btn.classList.toggle('is-asc', sortOrder === 'oldest');
+  btn.setAttribute('aria-label', sortOrder === 'newest' ? 'Sortierung: neueste zuerst' : 'Sortierung: älteste zuerst');
   renderEntries();
 }
 
@@ -485,7 +520,7 @@ function onFabClick() {
 // ───────────────────────────────────────────────
 function startRecording() {
   if (!('webkitSpeechRecognition' in window || 'SpeechRecognition' in window)) {
-    alert('Your browser does not support the Web Speech API.\nPlease use Chrome or Edge for voice recording.\n\nAlternatively, you can type your memo below using the manual input (double-click any empty area).');
+    alert('Dein Browser unterstützt keine Spracherkennung.\nBitte Chrome, Edge oder Safari verwenden – oder den Text manuell eingeben.');
     showManualInput();
     return;
   }
@@ -511,11 +546,7 @@ function startRecording() {
     }
     liveTranscript += final;
     liveInterim = interim;
-    document.getElementById('modalStatus').innerHTML = `
-      <div style="line-height:1.7; font-size:11px;">
-        <span style="color:var(--text-dim)">${escHtml(liveTranscript)}</span>
-        <span style="color:var(--text-muted)">${escHtml(interim)}</span>
-      </div>`;
+    renderLiveTranscript();
   };
 
   recognition.onerror = (e) => {
@@ -525,14 +556,12 @@ function startRecording() {
       isRecording = false;
       if (recognition) { recognition.onend = null; recognition.stop(); }
       setFabRecording(false);
-      document.getElementById('modalOverlay').classList.remove('show');
-      alert('Microphone access denied.\nPlease allow microphone access in your browser settings and try again.');
+      closeRecordOverlay();
+      alert('Kein Zugriff aufs Mikrofon.\nBitte in den Browser-Einstellungen erlauben und erneut versuchen.');
       return;
     }
     document.getElementById('modalStatus').innerHTML = `
-      <div style="color:var(--accent-rec); font-size:11px; padding:4px 0;">
-        Recognition error: ${e.error}. Tap Stop and try again.
-      </div>`;
+      <p class="transcript-text" style="color:var(--rec)">Fehler bei der Erkennung (${escHtml(e.error)}). Stoppen und neu versuchen.</p>`;
   };
 
   recognition.onend = () => {
@@ -546,43 +575,117 @@ function startRecording() {
   };
 
   recognition.start();
-  document.getElementById('modalTitle').textContent = '// AUFNAHME LÄUFT';
+  resetRecordOverlay();
   document.getElementById('modalOverlay').classList.add('show');
+  startRecordTimer();
   setFabRecording(true);
+}
+
+// ── Aufnahme-Bildschirm: Zustand, Timer, Live-Text ──
+let _recordTimer = null;
+let _recordStart = 0;
+
+function setRecordStatus(text) {
+  document.getElementById('modalTitle').innerHTML = `<span class="record-status-dot"></span>${escHtml(text)}`;
+}
+
+function startRecordTimer() {
+  _recordStart = Date.now();
+  const el = document.getElementById('recordTimer');
+  const tick = () => {
+    const s = Math.floor((Date.now() - _recordStart) / 1000);
+    el.textContent = String(Math.floor(s / 60)).padStart(2, '0') + ':' + String(s % 60).padStart(2, '0');
+  };
+  tick();
+  clearInterval(_recordTimer);
+  _recordTimer = setInterval(tick, 500);
+}
+
+function stopRecordTimer() { clearInterval(_recordTimer); _recordTimer = null; }
+
+function detectKind(text) {
+  const first = (text || '').trim().split(/[\s,.:;!?]+/)[0].toLowerCase().replace(/[^a-z0-9äöüß]/g, '');
+  return TODO_TRIGGERS[first] ? 'todo' : 'idea';
+}
+
+function updateKindBadge(text) {
+  const badge = document.getElementById('kindBadge');
+  const isTodo = detectKind(text) === 'todo';
+  badge.textContent = isTodo ? 'ERKANNT: TO-DO' : 'ERKANNT: NOTIZ';
+  badge.classList.toggle('is-todo', isTodo);
+}
+
+function renderLiveTranscript() {
+  const status = document.getElementById('modalStatus');
+  const all = (liveTranscript + ' ' + liveInterim).trim();
+  status.innerHTML = `<p class="transcript-text">${escHtml(liveTranscript)} <span class="interim">${escHtml(liveInterim)}</span><span class="caret"></span></p>`;
+  status.scrollTop = status.scrollHeight;
+  updateKindBadge(all);
+}
+
+function resetRecordOverlay() {
+  const overlay = document.getElementById('modalOverlay');
+  overlay.classList.remove('is-review', 'is-busy');
+  setRecordStatus('AUFNAHME LÄUFT');
+  document.getElementById('recordTimer').textContent = '00:00';
+  const status = document.getElementById('modalStatus');
+  status.style.display = '';
+  status.innerHTML = '<p class="transcript-text"><span class="transcript-hint">Sprich los – beginne mit „To-do“ oder „Aufgabe“ für eine Aufgabe.</span><span class="caret"></span></p>';
+  document.getElementById('reviewTextarea').style.display = 'none';
+  document.getElementById('modalStopBtn').style.display = '';
+  document.getElementById('modalConfirmBtn').style.display = 'none';
+  document.getElementById('modalCancelBtn').style.display = '';
+  updateKindBadge('');
+}
+
+function closeRecordOverlay() {
+  stopRecordTimer();
+  document.getElementById('modalOverlay').classList.remove('show', 'is-review', 'is-busy');
+}
+
+function cancelRecording() {
+  isRecording = false;
+  if (recognition) { recognition.onend = null; try { recognition.stop(); } catch (e) {} }
+  liveTranscript = '';
+  liveInterim = '';
+  setFabRecording(false);
+  closeRecordOverlay();
 }
 
 function setFabRecording(on) {
   const fab = document.getElementById('fab');
-  const micIcon  = document.getElementById('fabIcon');
-  const stopIcon = document.getElementById('fabStopIcon');
   if (!fab) return;
   fab.classList.toggle('recording', on);
-  if (micIcon)  micIcon.style.display  = on ? 'none'  : '';
-  if (stopIcon) stopIcon.style.display = on ? ''      : 'none';
+  fab.setAttribute('aria-label', on ? 'Aufnahme stoppen' : 'Aufnahme starten');
 }
 
 function stopRecording() {
+  if (!isRecording) return;
   if (navigator.vibrate) navigator.vibrate([30, 50, 30]);
   isRecording = false;
   if (recognition) { recognition.onend = null; recognition.stop(); }
 
   setFabRecording(false);
+  stopRecordTimer();
 
   // Combine confirmed finals + any pending interim
   const transcript = (liveTranscript + ' ' + liveInterim).trim();
   liveInterim = '';
 
   if (!transcript) {
-    document.getElementById('modalOverlay').classList.remove('show');
+    closeRecordOverlay();
     return;
   }
 
-  // Show review step — user can correct medical terms before saving
-  document.getElementById('modalTitle').textContent = '// ÜBERPRÜFEN & KORRIGIEREN';
+  // Prüfschritt — medizinische Begriffe vor dem Speichern korrigieren
+  document.getElementById('modalOverlay').classList.add('is-review');
+  setRecordStatus('ÜBERPRÜFEN & KORRIGIEREN');
   document.getElementById('modalStatus').style.display = 'none';
   const ta = document.getElementById('reviewTextarea');
   ta.value = transcript;
   ta.style.display = 'block';
+  ta.oninput = () => updateKindBadge(ta.value);
+  updateKindBadge(transcript);
   document.getElementById('modalStopBtn').style.display = 'none';
   document.getElementById('modalConfirmBtn').style.display = 'flex';
 }
@@ -590,18 +693,18 @@ function stopRecording() {
 function confirmAndProcess() {
   const transcript = document.getElementById('reviewTextarea').value.trim();
 
-  // Reset modal to recording state for next time
-  document.getElementById('modalStatus').style.display = 'block';
-  document.getElementById('reviewTextarea').style.display = 'none';
-  document.getElementById('modalStopBtn').style.display = 'flex';
-  document.getElementById('modalConfirmBtn').style.display = 'none';
-
   if (!transcript) {
-    document.getElementById('modalOverlay').classList.remove('show');
+    closeRecordOverlay();
     return;
   }
 
-  document.getElementById('modalTitle').textContent = '// VERARBEITUNG …';
+  const overlay = document.getElementById('modalOverlay');
+  overlay.classList.remove('is-review');
+  overlay.classList.add('is-busy');
+  setRecordStatus('WIRD GESPEICHERT …');
+  document.getElementById('reviewTextarea').style.display = 'none';
+  document.getElementById('modalConfirmBtn').style.display = 'none';
+  document.getElementById('modalCancelBtn').style.display = 'none';
   processTranscript(transcript);
 }
 
@@ -641,7 +744,7 @@ function saveCaptureAndDownload(kind, title, transcript) {
   captures.unshift(capture);
   saveCaptures();
   if (typeof Sync !== 'undefined') Sync.upsert(capture, 'captures');
-  document.getElementById('modalOverlay').classList.remove('show');
+  closeRecordOverlay();
   if (currentView === 'todos' || currentView === 'inbox') renderEntries();
 }
 
@@ -672,7 +775,7 @@ function runTitleAndSaveCapture(kind, cleanText) {
   document.getElementById('modalStatus').innerHTML = `
     <div class="processing">
       <div class="spinner"></div>
-      Titel wird generiert …
+      Wird gespeichert …
     </div>`;
 
   generateTitle(cleanText, kind).then(title => {
@@ -775,12 +878,11 @@ async function login(e) {
 }
 
 function logout() {
+  // Achtung: signOut() beendet alle Sitzungen dieses Kontos – auch die des Telegram-Bots.
+  if (!confirm('Abmelden beendet alle Sitzungen dieses Kontos – auch die des Telegram-Bots (danach dort neu anmelden). Trotzdem abmelden?')) return;
   if (typeof Sync !== 'undefined') Sync.signOut();
 }
 
-// Called both directly from login()'s success path and from bootApp()'s
-// SIGNED_IN listener (e.g. on a page load that already has a session) — the
-// guard makes it safe to fire from both without double-subscribing.
 let _loggedInHandled = false;
 function onLoggedIn() {
   if (_loggedInHandled) return;
@@ -1191,14 +1293,16 @@ function showDetail(id) {
     renderEntries();
   }
 
+  closeDetailMenu();
   const dt = new Date(memo.ts);
-  const dateStr = dt.toLocaleDateString('en-GB', {weekday:'long', year:'numeric', month:'long', day:'numeric'});
-  const timeStr = dt.toLocaleTimeString('en-GB', {hour:'2-digit', minute:'2-digit'});
+  const timeStr = dt.toLocaleTimeString('de-DE', {hour:'2-digit', minute:'2-digit'});
 
-  const navPath = document.getElementById('detailNavPath');
-  applyPathTagStyle(navPath, memo.path);
+  const tag = document.getElementById('detailNavPath');
+  tag.className = 'detail-tag' + (memo.path === 'E' ? ' is-todo' : '');
+  tag.textContent = getPathName(memo.path).toUpperCase();
+  document.getElementById('detailBackLabel').textContent = 'ARCHIV';
 
-  document.getElementById('detailTimestamp').textContent = dateStr + ' · ' + timeStr;
+  document.getElementById('detailTimestamp').textContent = relDay(memo.ts) + ' · ' + timeStr;
   document.getElementById('detailTitle').textContent = memo.title;
 
   const checkboxEl = document.getElementById('detailCheckbox');
@@ -1223,43 +1327,60 @@ function showDetail(id) {
   document.getElementById('detailEditBtn').style.display = '';
   document.getElementById('detailEditBtn').onclick     = () => openEditor(id, null);
   document.getElementById('detailCopyBtn').onclick     = () => copyMemo(id, null);
-  document.getElementById('detailDownloadBtn').onclick = () => downloadMemo(id, null);
-  document.getElementById('detailDeleteBtn').onclick   = () => deleteMemo(id, null);
+  document.getElementById('detailDownloadBtn').onclick = () => { closeDetailMenu(); downloadMemo(id, null); };
+  document.getElementById('detailDeleteBtn').onclick   = () => { closeDetailMenu(); deleteMemo(id, null); };
   document.getElementById('detailFileBtn').style.display = 'none';
 
   document.getElementById('detailOverlay').classList.add('show');
 }
 
+function toggleDetailMenu() {
+  const menu = document.getElementById('detailMenu');
+  const open = menu.hidden;
+  menu.hidden = !open;
+  document.getElementById('detailMenuBtn').setAttribute('aria-expanded', String(open));
+}
+
+function closeDetailMenu() {
+  const menu = document.getElementById('detailMenu');
+  if (!menu) return;
+  menu.hidden = true;
+  document.getElementById('detailMenuBtn').setAttribute('aria-expanded', 'false');
+}
+
+document.addEventListener('click', (e) => {
+  const menu = document.getElementById('detailMenu');
+  if (menu && !menu.hidden && !e.target.closest('#detailMenu') && !e.target.closest('#detailMenuBtn')) closeDetailMenu();
+});
+
 function applyCaptureTagStyle(el, kind) {
-  const dot = `<span style="width:6px;height:6px;border-radius:50%;background:currentColor;display:inline-block"></span>`;
-  const label = kind === 'todo' ? 'TO-DO' : 'IDEE';
-  if (kind === 'todo') {
-    el.className = 'entry-path-tag tag-e';
-    el.removeAttribute('style');
-  } else {
-    el.className = 'entry-path-tag';
-    el.style.cssText = 'color:var(--text-muted);';
-  }
-  el.innerHTML = dot + label;
+  el.className = 'detail-tag' + (kind === 'todo' ? ' is-todo' : '');
+  el.removeAttribute('style');
+  el.textContent = kind === 'todo' ? 'TO-DO' : 'IDEE';
 }
 
 function showCaptureDetail(id) {
   const c = captures.find(x => x.id === id);
   if (!c) { navigateBack(); return; }
 
+  closeDetailMenu();
   const dt = new Date(c.ts);
-  const dateStr = dt.toLocaleDateString('en-GB', {weekday:'long', year:'numeric', month:'long', day:'numeric'});
-  const timeStr = dt.toLocaleTimeString('en-GB', {hour:'2-digit', minute:'2-digit'});
+  const timeStr = dt.toLocaleTimeString('de-DE', {hour:'2-digit', minute:'2-digit'});
 
   applyCaptureTagStyle(document.getElementById('detailNavPath'), c.kind);
+  document.getElementById('detailBackLabel').textContent = c.kind === 'todo' ? 'TO-DO' : 'NOTIZEN';
 
-  document.getElementById('detailTimestamp').textContent = dateStr + ' · ' + timeStr;
+  const due = c.kind === 'todo' ? dueInfo(c.dueDate) : null;
+  document.getElementById('detailTimestamp').textContent =
+    relDay(c.ts) + ' · ' + timeStr + ' · ' + srcLabel(c).charAt(0) + srcLabel(c).slice(1).toLowerCase()
+    + (due ? ' · fällig ' + due.label.toLowerCase() : '');
   document.getElementById('detailTitle').textContent = c.title || c.transcript.slice(0, 60);
 
   const checkboxEl = document.getElementById('detailCheckbox');
   if (c.kind === 'todo') {
     checkboxEl.style.display = '';
     checkboxEl.classList.toggle('checked', !!c.done);
+    checkboxEl.setAttribute('aria-label', c.done ? 'Wieder öffnen' : 'Als erledigt markieren');
     checkboxEl.onclick = () => toggleCaptureDone(id, null);
   } else {
     checkboxEl.style.display = 'none';
@@ -1272,13 +1393,13 @@ function showCaptureDetail(id) {
 
   document.getElementById('detailEditBtn').style.display = 'none';
   document.getElementById('detailCopyBtn').onclick     = () => copyCapture(id, null);
-  document.getElementById('detailDownloadBtn').onclick = () => downloadCapture(id, null);
-  document.getElementById('detailDeleteBtn').onclick   = () => deleteCapture(id, null);
+  document.getElementById('detailDownloadBtn').onclick = () => { closeDetailMenu(); downloadCapture(id, null); };
+  document.getElementById('detailDeleteBtn').onclick   = () => { closeDetailMenu(); deleteCapture(id, null); };
 
   const fileBtn = document.getElementById('detailFileBtn');
   if (c.kind === 'idea' && !c.filed) {
     fileBtn.style.display = '';
-    fileBtn.onclick = () => openMergePicker(id, null);
+    fileBtn.onclick = () => { closeDetailMenu(); openMergePicker(id, null); };
   } else {
     fileBtn.style.display = 'none';
   }
