@@ -349,7 +349,7 @@ function renderInboxList(search) {
     const title = c.title || c.transcript.slice(0, 60);
     html += `
       <button class="note-card" onclick="navigateToCaptureDetail('${c.id}')">
-        <span class="note-head"><span class="note-tag">IDEE</span>${relTime(c.ts)}</span>
+        <span class="note-head"><span class="note-tag">IDEE${c.processingStatus === 'pending' ? '<span class="processing-badge">wird überarbeitet …</span>' : ''}</span>${relTime(c.ts)}</span>
         <span class="note-title">${highlight(title, search)}</span>
         <span class="note-preview">${highlight(c.transcript.substring(0, 220), search)}</span>
       </button>`;
@@ -740,6 +740,10 @@ function saveCaptureAndDownload(kind, title, transcript) {
     filed: false,
     ideaDocumentId: null,
     legacyPath: null,
+    // Notizen überarbeitet der Trawesko-Bot (Rechtschreibung, Format, Überschrift);
+    // bis dahin ist die Notiz roh sichtbar, das Original bleibt in transcriptRaw.
+    processingStatus: kind === 'idea' ? 'pending' : null,
+    transcriptRaw: kind === 'idea' ? transcript : null,
   };
   captures.unshift(capture);
   saveCaptures();
@@ -771,6 +775,12 @@ function processTranscript(transcript) {
 }
 
 function runTitleAndSaveCapture(kind, cleanText) {
+  if (kind === 'idea') {
+    // Überschrift kommt vom Bot – vorläufig die ersten Wörter
+    const words = cleanText.split(' ');
+    saveCaptureAndDownload(kind, words.slice(0, 6).join(' ') + (words.length > 6 ? '…' : ''), cleanText);
+    return;
+  }
   document.getElementById('modalStatus').style.display = 'block';
   document.getElementById('modalStatus').innerHTML = `
     <div class="processing">
@@ -1390,6 +1400,23 @@ function showCaptureDetail(id) {
   const textEl = document.getElementById('detailText');
   textEl.textContent = c.transcript;
   textEl.className = 'detail-text';
+
+  // Original (Spracherkennung) vs. vom Bot überarbeitete Fassung
+  const rawBtn = document.getElementById('detailRawToggle');
+  const hasRaw = !!c.transcriptRaw && c.transcriptRaw.trim() !== (c.transcript || '').trim();
+  rawBtn.hidden = !hasRaw;
+  if (hasRaw) {
+    let showingRaw = false;
+    rawBtn.textContent = 'Original anzeigen';
+    rawBtn.onclick = () => {
+      showingRaw = !showingRaw;
+      textEl.textContent = showingRaw ? c.transcriptRaw : c.transcript;
+      textEl.classList.toggle('is-raw', showingRaw);
+      rawBtn.textContent = showingRaw ? 'Überarbeitet anzeigen' : 'Original anzeigen';
+    };
+  }
+  const pending = document.getElementById('detailProcessing');
+  pending.hidden = c.processingStatus !== 'pending';
 
   document.getElementById('detailEditBtn').style.display = 'none';
   document.getElementById('detailCopyBtn').onclick     = () => copyCapture(id, null);

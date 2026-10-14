@@ -94,6 +94,8 @@ const Sync = (() => {
       filed: !!row.filed,
       ideaDocumentId: row.idea_document_id || null,
       legacyPath: row.legacy_path || null,
+      processingStatus: row.processing_status || null,
+      transcriptRaw: row.transcript_raw || null,
     };
   }
 
@@ -110,6 +112,8 @@ const Sync = (() => {
       filed: !!c.filed,
       idea_document_id: c.ideaDocumentId || null,
       legacy_path: c.legacyPath || null,
+      processing_status: c.processingStatus || null,
+      transcript_raw: c.transcriptRaw || null,
       user_id: currentUser ? currentUser.id : null,
     };
   }
